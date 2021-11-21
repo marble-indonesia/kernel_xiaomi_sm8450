@@ -16,10 +16,7 @@
  *
  * Alignment fixed up by hardware.
  */
-
 	.p2align 4
-	// Alignment is for the loop, but since the prologue (including BTI)
-	// is also 16 bytes we can keep any padding outside the function
 SYM_FUNC_START(__arch_clear_user)
 	add	x2, x0, x1
 	subs	x1, x1, #8

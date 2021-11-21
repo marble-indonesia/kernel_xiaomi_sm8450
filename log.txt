@@ -1,4 +1,8 @@
-.config:7825:warning: override: DEFAULT_BBR changes choice state
+arch/arm64/configs/gki_defconfig:775:warning: override: reassigning to symbol SUSPEND_SKIP_SYNC
+.config:7824:warning: override: DEFAULT_BBR changes choice state
+.config:7871:warning: override: reassigning to symbol MI_THERMAL_INTERFACE
+.config:7872:warning: override: reassigning to symbol MI_THERMAL_MULTI_CHARGE
+.config:7873:warning: override: reassigning to symbol HAVE_CHARGE_TEMP
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
 Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
