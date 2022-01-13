@@ -55,19 +55,24 @@ static int goodix_spi_read_bra(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN + len;
 
-	rx_buf = kzalloc(SPI_READ_PREFIX_LEN + len, GFP_KERNEL);
-	if (!rx_buf) {
-		ts_err("alloc rx_buf failed, size:%d",
-			SPI_READ_PREFIX_LEN + len);
-		return -ENOMEM;
-	}
+	if (buf_len <= SPI_PREALLOC_RX_BUF_SIZE &&
+		buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
+		rx_buf = goodix_spi_bus.rx_buf;
+		tx_buf = goodix_spi_bus.tx_buf;
+		memset(tx_buf, 0, buf_len);
+	} else {
+		rx_buf = kzalloc(buf_len, GFP_KERNEL);
+		if (!rx_buf) {
+			ts_err("alloc rx_buf failed, size:%d", buf_len);
+			return -ENOMEM;
+		}
 
-	tx_buf = kzalloc(SPI_READ_PREFIX_LEN + len, GFP_KERNEL);
-	if (!tx_buf) {
-		ts_err("alloc tx_buf failed, size:%d",
-			SPI_READ_PREFIX_LEN + len);
-		ret = -ENOMEM;
-		goto err_alloc_rx_buf;
+		tx_buf = kzalloc(buf_len, GFP_KERNEL);
+		if (!tx_buf) {
+			ts_err("alloc tx_buf failed, size:%d", buf_len);
+			ret = -ENOMEM;
+			goto err_alloc_rx_buf;
+		}
 	}
 
 	spi_message_init(&spi_msg);
@@ -97,9 +102,11 @@ static int goodix_spi_read_bra(struct device *dev, unsigned int addr,
 	memcpy(data, &rx_buf[SPI_READ_PREFIX_LEN], len);
 
 err_spi_transfer:
-	kfree(rx_buf);
+	if (rx_buf != goodix_spi_bus.rx_buf)
+		kfree(rx_buf);
 err_alloc_rx_buf:
-	kfree(tx_buf);
+	if (tx_buf != goodix_spi_bus.tx_buf)
+		kfree(tx_buf);
 	return ret;
 }
 
@@ -114,19 +121,24 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	int ret = 0;
 	int buf_len = SPI_READ_PREFIX_LEN - 1 + len;
 
-	rx_buf = kzalloc(SPI_READ_PREFIX_LEN - 1 + len, GFP_KERNEL);
-	if (!rx_buf) {
-		ts_err("alloc rx_buf failed, size:%d",
-			SPI_READ_PREFIX_LEN + len);
-		return -ENOMEM;
-	}
+	if (buf_len <= SPI_PREALLOC_RX_BUF_SIZE &&
+		buf_len <= SPI_PREALLOC_TX_BUF_SIZE) {
+		rx_buf = goodix_spi_bus.rx_buf;
+		tx_buf = goodix_spi_bus.tx_buf;
+		memset(tx_buf, 0, buf_len);
+	} else {
+		rx_buf = kzalloc(buf_len, GFP_KERNEL);
+		if (!rx_buf) {
+			ts_err("alloc rx_buf failed, size:%d", buf_len);
+			return -ENOMEM;
+		}
 
-	tx_buf = kzalloc(SPI_READ_PREFIX_LEN - 1 + len, GFP_KERNEL);
-	if (!tx_buf) {
-		ts_err("alloc tx_buf failed, size:%d",
-			SPI_READ_PREFIX_LEN + len);
-		ret = -ENOMEM;
-		goto err_alloc_rx_buf;
+		tx_buf = kzalloc(buf_len, GFP_KERNEL);
+		if (!tx_buf) {
+			ts_err("alloc tx_buf failed, size:%d", buf_len);
+			ret = -ENOMEM;
+			goto err_alloc_rx_buf;
+		}
 	}
 
 	spi_message_init(&spi_msg);
@@ -155,9 +167,11 @@ static int goodix_spi_read(struct device *dev, unsigned int addr,
 	memcpy(data, &rx_buf[SPI_READ_PREFIX_LEN - 1], len);
 
 err_spi_transfer:
-	kfree(rx_buf);
+	if (rx_buf != goodix_spi_bus.rx_buf)
+		kfree(rx_buf);
 err_alloc_rx_buf:
-	kfree(tx_buf);
+	if (tx_buf != goodix_spi_bus.tx_buf)
+		kfree(tx_buf);
 	return ret;
 }
 
@@ -276,8 +290,6 @@ static int goodix_spi_probe(struct spi_device *spi)
 		ret = -ENOMEM;
 		goto err_alloc_tx_buf;
 	}
-
-	mutex_init(&goodix_spi_bus.mutex);
 
 	/* ts core device */
 	goodix_pdev = kzalloc(sizeof(struct platform_device), GFP_KERNEL);
