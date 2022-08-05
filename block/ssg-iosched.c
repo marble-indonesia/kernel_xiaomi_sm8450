@@ -464,8 +464,8 @@ static void ssg_depth_updated(struct blk_mq_hw_ctx *hctx)
 	ssg->congestion_threshold_rqs = depth * congestion_threshold / 100U;
 
 	kfree(ssg->rq_info);
-	ssg->rq_info = kmalloc_array(depth, sizeof(struct ssg_request_info),
-				     GFP_KERNEL | __GFP_ZERO);
+	ssg->rq_info = kmalloc(depth * sizeof(struct ssg_request_info),
+			GFP_KERNEL | __GFP_ZERO);
 	if (ZERO_OR_NULL_PTR(ssg->rq_info))
 		ssg->rq_info = NULL;
 
@@ -591,8 +591,8 @@ static int ssg_init_queue(struct request_queue *q, struct elevator_type *e)
 	atomic_set(&ssg->async_write_rqs, 0);
 	ssg->congestion_threshold_rqs =
 		q->nr_requests * congestion_threshold / 100U;
-	ssg->rq_info = kmalloc_array(q->nr_requests, sizeof(struct ssg_request_info),
-				     GFP_KERNEL | __GFP_ZERO);
+	ssg->rq_info = kmalloc(q->nr_requests * sizeof(struct ssg_request_info),
+			GFP_KERNEL | __GFP_ZERO);
 	if (ZERO_OR_NULL_PTR(ssg->rq_info))
 		ssg->rq_info = NULL;
 
@@ -726,7 +726,7 @@ static void ssg_prepare_request(struct request *rq)
 
 	rqi = ssg_rq_info(ssg, rq);
 	if (likely(rqi)) {
-		rqi->tgid = task_tgid_nr(current->group_leader);
+		set_thread_group_info(rqi);
 
 		rcu_read_lock();
 		rqi->blkg = blkg_lookup(css_to_blkcg(blkcg_css()), rq->q);
@@ -775,8 +775,7 @@ static void ssg_finish_request(struct request *rq)
 
 	rqi = ssg_rq_info(ssg, rq);
 	if (likely(rqi)) {
-		rqi->tgid = 0;
-
+		clear_thread_group_info(rqi);
 		ssg_blkcg_dec_rq(rqi->blkg);
 		rqi->blkg = NULL;
 	}
@@ -804,10 +803,9 @@ static ssize_t ssg_var_show(int var, char *page)
 
 static void ssg_var_store(int *var, const char *page)
 {
-	long val;
+	char *p = (char *) page;
 
-	if (!kstrtol(page, 10, &val))
-		*var = val;
+	*var = simple_strtol(p, &p, 10);
 }
 
 #define SHOW_FUNCTION(__FUNC, __VAR, __CONV)				\
