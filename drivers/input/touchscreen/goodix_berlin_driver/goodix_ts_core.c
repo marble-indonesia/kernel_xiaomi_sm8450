@@ -2705,7 +2705,9 @@ static int goodix_ts_remove(struct platform_device *pdev)
 	#elif IS_ENABLED(CONFIG_FB)
 		fb_unregister_client(&core_data->fb_notifier);
 	#endif
+#ifdef CONFIG_TOUCHSCREEN_GOODIX_BRL_PEN
 		goodix_ts_pen_dev_remove(core_data);
+#endif
 		goodix_ts_input_dev_remove(core_data);
 
 		goodix_fw_update_uninit();
