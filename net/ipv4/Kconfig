@@ -690,6 +690,13 @@ config TCP_CONG_BBRPLUS
 	  Originally introduced by dog250 & cx9208.
 	  Same as BBR, requires the fq ("Fair Queue") pacing packet scheduler.
 
+config TCP_CONG_BBR1
+	tristate "BBRv1 TCP"
+	default n
+	help
+
+	  BBRv1, for testing.
+
 choice
 	prompt "Default TCP congestion control"
 	default DEFAULT_BBRPLUS
@@ -729,6 +736,9 @@ choice
 
 	config DEFAULT_BBRPLUS
 		bool "BBRplus" if TCP_CONG_BBRPLUS=y
+
+	config DEFAULT_BBR1
+		bool "BBR1" if TCP_CONG_BBR1=y
 
 	config DEFAULT_RENO
 		bool "Reno"
