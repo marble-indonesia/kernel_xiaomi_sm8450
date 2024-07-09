@@ -877,7 +877,7 @@ static int save_compressed_image(struct swap_map_handle *handle,
 			for (off = 0;
 			     off < CMP_HEADER + data[thr].cmp_len;
 			     off += PAGE_SIZE) {
-				memcpy(page, data[thr].cmp + off, PAGE_SIZE);
+				copy_page(page, data[thr].cmp + off);
 
 				trace_android_vh_encrypt_page(page);
 				ret = swap_write_page(handle, page, &hb);
