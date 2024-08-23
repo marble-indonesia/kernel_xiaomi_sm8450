@@ -1344,16 +1344,20 @@ static int brld_get_framedata(struct goodix_ts_core *cd,
 	unsigned char val;
 	int retry = 20;
 	struct frame_head *frame_head;
-	unsigned char frame_buf[GOODIX_MAX_FRAMEDATA_LEN];
+	u8 *frame_buf;
 	unsigned char *cur_ptr;
 	unsigned int flag_addr = cd->ic_info.misc.frame_data_addr;
+
+	frame_buf = kzalloc(GOODIX_MAX_FRAMEDATA_LEN, GFP_KERNEL);
+	if (frame_buf == NULL)
+		return -ENOMEM;
 
 	/* clean touch event flag */
 	val = 0;
 	ret = brl_write(cd, flag_addr, &val, 1);
 	if (ret < 0) {
 		ts_err("clean touch event failed, exit!");
-		return ret;
+		goto exit;
 	}
 
 	while (retry--) {
@@ -1364,19 +1368,21 @@ static int brld_get_framedata(struct goodix_ts_core *cd,
 	}
 	if (retry < 0) {
 		ts_err("framedata is not ready val:0x%02x, exit!", val);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	ret = brl_read(cd, flag_addr, frame_buf, GOODIX_MAX_FRAMEDATA_LEN);
 	if (ret < 0) {
 		ts_err("read frame data failed");
-		return ret;
+		goto exit;
 	}
 
 	if (checksum_cmp(frame_buf, cd->ic_info.misc.frame_data_head_len,
 			CHECKSUM_MODE_U8_LE)) {
-		ts_err("frame head checksum error");
-		return -EINVAL;
+		ts_err("frame head checksum error"); return -EINVAL;
+		ret = -EINVAL;
+		goto exit;
 	}
 
 	frame_head = (struct frame_head *)frame_buf;
@@ -1392,7 +1398,9 @@ static int brld_get_framedata(struct goodix_ts_core *cd,
 	memcpy((u8 *)(info->buff + info->used_size), cur_ptr + 8,
 			cd->ic_info.misc.mutual_struct_len - 8);
 
-	return 0;
+exit:
+	kfree(frame_buf);
+	return ret;
 }
 
 static int brld_get_cap_data(struct goodix_ts_core *cd,
