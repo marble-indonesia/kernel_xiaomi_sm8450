@@ -2232,6 +2232,55 @@ static ssize_t charging_enabled_show(struct class *c,
 }
 static CLASS_ATTR_RW(charging_enabled);
 
+static ssize_t charging_enabled_store(struct class *c,
+				      struct class_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc;
+	bool val;
+
+	if (kstrtobool(buf, &val))
+		return -EINVAL;
+
+	if (val) {
+		/*
+		 * Enable charging, i.e. set the restricted current back to
+		 * its default value and unset the restriction boolean flag.
+		 */
+		rc = __battery_psy_set_charge_current(bcdev,
+				DEFAULT_RESTRICT_FCC_UA);
+		if (rc < 0)
+			return rc;
+		bcdev->restrict_fcc_ua = DEFAULT_RESTRICT_FCC_UA;
+		bcdev->restrict_chg_en = 0;
+	} else {
+		/*
+		 * Disable charging, i.e. set the restricted current to zero
+		 * and set the restriction boolean flag.
+		 */
+		rc = __battery_psy_set_charge_current(bcdev, 0 /* 0 uA */);
+		if (rc < 0)
+			return rc;
+		bcdev->restrict_fcc_ua = 0;
+		bcdev->restrict_chg_en = 1;
+	}
+
+	return count;
+}
+
+static ssize_t charging_enabled_show(struct class *c,
+				     struct class_attribute *attr, char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	bool val = !bcdev->restrict_chg_en && bcdev->restrict_fcc_ua;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", val);
+}
+static CLASS_ATTR_RW(charging_enabled);
+
 static struct attribute *battery_class_attrs[] = {
 	&class_attr_soh.attr,
 	&class_attr_resistance.attr,
@@ -2250,19 +2299,227 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_restrict_cur.attr,
 	&class_attr_usb_real_type.attr,
 	&class_attr_usb_typec_compliant.attr,
+	&class_attr_real_type.attr,
+	&class_attr_resistance_id.attr,
+	&class_attr_verify_digest.attr,
+	&class_attr_connector_temp.attr,
+	&class_attr_authentic.attr,
+	&class_attr_bap_match.attr,
+	&class_attr_chip_ok.attr,
+	&class_attr_vbus_disable.attr,
+	&class_attr_verify_process.attr,
+	&class_attr_request_vdm_cmd.attr,
+	&class_attr_current_state.attr,
+	&class_attr_adapter_id.attr,
+	&class_attr_adapter_svid.attr,
+	&class_attr_pd_verifed.attr,
+	&class_attr_pdo2.attr,
+	&class_attr_bq2597x_chip_ok.attr,
+	&class_attr_bq2597x_slave_chip_ok.attr,
+	&class_attr_bq2597x_bus_current.attr,
+	&class_attr_bq2597x_slave_bus_current.attr,
+	&class_attr_bq2597x_bus_delta.attr,
+	&class_attr_bq2597x_bus_voltage.attr,
+	&class_attr_bq2597x_battery_present.attr,
+	&class_attr_bq2597x_slave_battery_present.attr,
+	&class_attr_bq2597x_battery_voltage.attr,
+	&class_attr_master_smb1396_online.attr,
+	&class_attr_master_smb1396_iin.attr,
+	&class_attr_slave_smb1396_online.attr,
+	&class_attr_slave_smb1396_iin.attr,
+	&class_attr_smb_iin_diff.attr,
+	&class_attr_cc_orientation.attr,
+	&class_attr_input_suspend.attr,
+	&class_attr_fastchg_mode.attr,
+	&class_attr_night_charging.attr,
+#ifdef CONFIG_MARBLE_TOGGLE
+	&class_attr_blank_status.attr,
+	&class_attr_screen_cctog.attr,
+#endif
+	&class_attr_shutdown_delay.attr,
+	&class_attr_soc_decimal.attr,
+	&class_attr_soc_decimal_rate.attr,
+	&class_attr_quick_charge_type.attr,
+	&class_attr_fake_cycle.attr,
+	&class_attr_fake_soh.attr,
+	&class_attr_deltafv.attr,
+	&class_attr_otg_ui_support.attr,
+	&class_attr_cid_status.attr,
+	&class_attr_cc_toggle.attr,
+	&class_attr_hifi_connect.attr,
+	&class_attr_fake_temp.attr,
+	&class_attr_thermal_remove.attr,
+	&class_attr_typec_mode.attr,
+	&class_attr_mtbf_current.attr,
+	&class_attr_smart_batt.attr,
+	&class_attr_smart_chg.attr,
+	&class_attr_shipmode_count_reset.attr,
+	&class_attr_sport_mode.attr,
+	&class_attr_apdo_max.attr,
+	&class_attr_verify_slave_flag.attr,
+	&class_attr_die_temperature.attr,
+	&class_attr_slave_die_temperature.attr,
+	&class_attr_fg_raw_soc.attr,
+	&class_attr_battcont_online.attr,
+	&class_attr_battmoni_isc.attr,
+	&class_attr_battmoni_soa.attr,
+	&class_attr_over_peak_flag.attr,
+	&class_attr_current_deviation.attr,
+	&class_attr_power_deviation.attr,
+	&class_attr_average_current.attr,
+	&class_attr_average_temp.attr,
+	&class_attr_start_learn.attr,
+	&class_attr_stop_learn.attr,
+	&class_attr_set_learn_power.attr,
+	&class_attr_get_learn_power.attr,
+	&class_attr_get_learn_power_dev.attr,
+	&class_attr_get_learn_time_dev.attr,
+	&class_attr_constant_power.attr,
+	&class_attr_remaining_time.attr,
+	&class_attr_referance_power.attr,
+	&class_attr_nvt_referance_current.attr,
+	&class_attr_nvt_referance_power.attr,
+	&class_attr_start_learn_b.attr,
+	&class_attr_stop_learn_b.attr,
+	&class_attr_set_learn_power_b.attr,
+	&class_attr_get_learn_power_b.attr,
+	&class_attr_get_learn_power_dev_b.attr,
+#if defined(CONFIG_MI_DTPT) && defined(CONFIG_DUAL_FUEL_GAUGE)
+	&class_attr_fg2_over_peak_flag.attr,
+	&class_attr_fg2_current_deviation.attr,
+	&class_attr_fg2_power_deviation.attr,
+	&class_attr_fg2_average_current.attr,
+	&class_attr_fg2_average_temp.attr,
+	&class_attr_fg2_start_learn.attr,
+	&class_attr_fg2_stop_learn.attr,
+	&class_attr_fg2_set_learn_power.attr,
+	&class_attr_fg2_get_learn_power.attr,
+	&class_attr_fg2_get_learn_power_dev.attr,
+	&class_attr_fg2_get_learn_time_dev.attr,
+	&class_attr_fg2_constant_power.attr,
+	&class_attr_fg2_remaining_time.attr,
+	&class_attr_fg2_referance_power.attr,
+	&class_attr_fg2_nvt_referance_current.attr,
+	&class_attr_fg2_nvt_referance_power.attr,
+	&class_attr_fg2_start_learn_b.attr,
+	&class_attr_fg2_stop_learn_b.attr,
+	&class_attr_fg2_set_learn_power_b.attr,
+	&class_attr_fg2_get_learn_power_b.attr,
+	&class_attr_fg2_get_learn_power_dev_b.attr,
+#endif
+
+#if defined(CONFIG_MI_WIRELESS)
+	&class_attr_tx_mac.attr,
+	&class_attr_pen_mac.attr,
+	&class_attr_tx_iout.attr,
+	&class_attr_tx_vout.attr,
+	&class_attr_pen_soc.attr,
+	&class_attr_pen_hall3.attr,
+	&class_attr_pen_hall4.attr,
+	&class_attr_rx_cr.attr,
+	&class_attr_rx_cep.attr,
+	&class_attr_bt_state.attr,
+	&class_attr_reverse_chg_mode.attr,
+	&class_attr_reverse_chg_state.attr,
+	&class_attr_wireless_chip_fw.attr,
+	&class_attr_wls_bin.attr,
+	&class_attr_rx_vout.attr,
+	&class_attr_rx_vrect.attr,
+	&class_attr_rx_iout.attr,
+	&class_attr_tx_adapter.attr,
+	&class_attr_op_mode.attr,
+	&class_attr_wls_die_temp.attr,
+	&class_attr_wlscharge_control_limit.attr,
+	&class_attr_wls_thermal_remove.attr,
+	&class_attr_wls_debug.attr,
+	&class_attr_wls_fw_state.attr,
+	&class_attr_wls_car_adapter.attr,
+	&class_attr_wls_tx_speed.attr,
+	&class_attr_wls_fc_flag.attr,
+#endif
+#ifdef CONFIG_MARBLE_TOGGLE_2
+	&class_attr_batt_sn.attr,
+	&class_attr_max_life_vol.attr,
+	&class_attr_max_life_temp.attr,
+	&class_attr_over_vol_duration.attr,
+#endif
+	&class_attr_fg1_qmax.attr,
+	&class_attr_fg1_rm.attr,
+	&class_attr_fg1_fcc.attr,
+	&class_attr_fg1_soh.attr,
+	&class_attr_fg1_fcc_soh.attr,
+	&class_attr_fg1_cycle.attr,
+	&class_attr_fg1_fastcharge.attr,
+	&class_attr_fg1_current_max.attr,
+	&class_attr_fg1_vol_max.attr,
+	&class_attr_fg1_tsim.attr,
+	&class_attr_fg1_cell1_rascale.attr,
+	&class_attr_fg1_avg_current.attr,
+	&class_attr_fg1_tambient.attr,
+	&class_attr_fg1_tremq.attr,
+	&class_attr_fg1_tfullq.attr,
+	&class_attr_fg1_rsoc.attr,
+	&class_attr_fg1_ai.attr,
+	&class_attr_fg1_cell1_vol.attr,
+	&class_attr_fg1_cell2_vol.attr,
+	&class_attr_power_max.attr,
+	&class_attr_fg_vendor.attr,
+	&class_attr_fg_temp_max.attr,
+	&class_attr_fg_time_ot.attr,
+#if defined (CONFIG_DUAL_FUEL_GAUGE)
+	&class_attr_slave_chip_ok.attr,
+	&class_attr_slave_authentic.attr,
+	&class_attr_fg1_vol.attr,
+	&class_attr_fg1_soc.attr,
+	&class_attr_fg1_temp.attr,
+	&class_attr_fg1_ibatt.attr,
+	&class_attr_fg1_ChargingStatus.attr,
+	&class_attr_fg1_GaugingStatus.attr,
+	&class_attr_fg1_FullChargeFlag.attr,
+	&class_attr_fg2_vol.attr,
+	&class_attr_fg2_soc.attr,
+	&class_attr_fg2_temp.attr,
+	&class_attr_fg2_ibatt.attr,
+	&class_attr_fg2_qmax.attr,
+	&class_attr_fg2_rm.attr,
+	&class_attr_fg2_fcc.attr,
+	&class_attr_fg2_soh.attr,
+	&class_attr_fg2_fcc_soh.attr,
+	&class_attr_fg2_cycle.attr,
+	&class_attr_fg2_fastcharge.attr,
+	&class_attr_fg2_current_max.attr,
+	&class_attr_fg2_vol_max.attr,
+	&class_attr_fg2_tsim.attr,
+	&class_attr_fg2_cell1_rascale.attr,
+	&class_attr_fg2_avg_current.attr,
+	&class_attr_fg2_tambient.attr,
+	&class_attr_fg2_tremq.attr,
+	&class_attr_fg2_tfullq.attr,
+	&class_attr_fg2_ChargingStatus.attr,
+	&class_attr_fg2_GaugingStatus.attr,
+	&class_attr_fg2_FullChargeFlag.attr,
+	&class_attr_fg2_rsoc.attr,
+	&class_attr_fg_voltage_max.attr,
+	&class_attr_fg_charge_current_max.attr,
+	&class_attr_fg_discharge_current_max.attr,
+	&class_attr_fg_temp_min.attr,
+	&class_attr_fg_time_ht.attr,
+	&class_attr_fg_time_ut.attr,
+	&class_attr_fg_time_lt.attr,
+	&class_attr_fg_seal_set.attr,
+	&class_attr_fg1_seal_state.attr,
+	&class_attr_fg1_df_check.attr,
+	&class_attr_fg2_seal_state.attr,
+	&class_attr_fg2_df_check.attr,
+#endif
+#if defined(CONFIG_BQ_CLOUD_AUTHENTICATION)
+	&class_attr_server_sn.attr,
+	&class_attr_server_result.attr,
+	&class_attr_adsp_result.attr,
+#endif
+	&class_attr_thermal_board_temp.attr,
 	&class_attr_charging_enabled.attr,
-	NULL,
-};
-
-static const struct attribute_group battery_class_group = {
-	.attrs = battery_class_attrs,
-};
-
-extern const struct attribute_group xiaomi_battery_class_group;
-
-static const struct attribute_group *battery_class_groups[] = {
-	&battery_class_group,
-	&xiaomi_battery_class_group,
+	&class_attr_last_node.attr,
 	NULL,
 };
 
