@@ -41,6 +41,8 @@
 	|| typec_mode == QTI_POWER_SUPPLY_TYPEC_SOURCE_HIGH)	\
 	&& (!chg->typec_legacy || chg->typec_legacy_use_rp_icl))
 
+static int bypass_charging = 0;
+
 static void update_sw_icl_max(struct smb_charger *chg, int val);
 static int smblib_get_prop_typec_mode(struct smb_charger *chg);
 
@@ -1970,7 +1972,14 @@ int smblib_vbus_regulator_is_enabled(struct regulator_dev *rdev)
 int smblib_get_prop_input_current_limit_usb(struct smb_charger *chg,
 				union power_supply_propval *val)
 {
-	val->intval = get_client_vote(chg->usb_icl_votable, USER_VOTER);
+	if ((get_client_vote(chg->chg_disable_votable, BYPASS_VOTER) == 1)) {
+         	val->intval = 1;
+      	} else if (bypass_charging) {
+          	val->intval = 2;
+      	} else {
+         	val->intval = 0;
+      	}
+
 	return 0;
 }
 
@@ -2415,17 +2424,40 @@ int smblib_set_prop_input_current_limit_usb(struct smb_charger *chg,
 {
 	int rc;
 
+	/* vote 0mA when suspended */
 	if (val->intval ==  0)
-		rc = vote(chg->usb_icl_votable, USER_VOTER, true, 0);
-	else if (val->intval < 0)
 		rc = vote(chg->usb_icl_votable, USER_VOTER, false, 0);
-	else
-		rc = vote(chg->usb_icl_votable, USER_VOTER, true, val->intval);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't vote to %s USB rc=%d\n",
+			(bool)val->intval ? "suspend" : "resume", rc);
+		return rc;
+	}
 
-	if (rc < 0)
-		smblib_err(chg, "Couldn't vote to set USB ICL to %d rc=%d\n",
-				val->intval, rc);
+	rc = vote(chg->dc_suspend_votable,, USER_VOTER, false, 0);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't vote to %s DC rc=%d\n",
+			(bool)val->intval ? "suspend" : "resume", rc);
+		return rc;
+	}
 
+	if (val->intval == 1) {
+          	rc = vote(chg->chg_disable_votable, BYPASS_VOTER, 1, 0);
+          	bypass_charging = 0;
+      	} else if (val->intval == 2) {
+          	rc = vote(chg->chg_disable_votable, BYPASS_VOTER, 0, 0);
+          	bypass_charging = 1;
+      	} else {
+          	rc = vote(chg->chg_disable_votable, BYPASS_VOTER, 0, 0);
+          	bypass_charging = 0;
+      	}
+
+ 	if (rc < 0) {
+  		smblib_err(chg, "Couldn't vote to %d input_suspend rc=%d\n",
+  			val->intval, rc);
+  		return rc;
+  	}
+
+	power_supply_changed(chg->batt_psy);
 	return rc;
 }
 
@@ -2456,6 +2488,8 @@ int smblib_set_prop_batt_status(struct smb_charger *chg,
 int smblib_set_prop_system_temp_level(struct smb_charger *chg,
 				const union power_supply_propval *val)
 {
+	int system_temp_level = 0;
+
 	if (val->intval < 0)
 		return -EINVAL;
 
@@ -2465,18 +2499,16 @@ int smblib_set_prop_system_temp_level(struct smb_charger *chg,
 	if (val->intval > chg->thermal_levels)
 		return -EINVAL;
 
-	chg->system_temp_level = val->intval;
-
-	if (chg->system_temp_level == chg->thermal_levels)
+	if (system_temp_level >= chg->thermal_levels)
 		return vote(chg->chg_disable_votable,
 			THERMAL_DAEMON_VOTER, true, 0);
 
 	vote(chg->chg_disable_votable, THERMAL_DAEMON_VOTER, false, 0);
-	if (chg->system_temp_level == 0)
+	if (system_temp_level == 0)
 		return vote(chg->fcc_votable, THERMAL_DAEMON_VOTER, false, 0);
 
 	vote(chg->fcc_votable, THERMAL_DAEMON_VOTER, true,
-			chg->thermal_mitigation[chg->system_temp_level]);
+			chg->thermal_mitigation[system_temp_level]);
 	return 0;
 }
 
