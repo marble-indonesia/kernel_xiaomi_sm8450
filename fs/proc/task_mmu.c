@@ -321,9 +321,22 @@ static void show_vma_header_prefix(struct seq_file *m,
 	seq_putc(m, ' ');
 }
 
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-extern void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino);
-#endif
+static void show_vma_header_prefix_fake(struct seq_file *m,
+				   unsigned long start, unsigned long end,
+				   vm_flags_t flags, unsigned long long pgoff,
+				   dev_t dev, unsigned long ino)
+{
+	seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
+	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
+		   start,
+		   end,
+		   flags & VM_READ ? 'r' : '-',
+		   flags & VM_WRITE ? 'w' : '-',
+		   flags & VM_EXEC ? '-' : '-',
+		   flags & VM_MAYSHARE ? 's' : 'p',
+		   pgoff,
+		   MAJOR(dev), MINOR(dev), ino);
+}
 
 static void
 show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
@@ -338,25 +351,40 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 	const char *name = NULL;
 
 	if (file) {
-		struct inode *inode = file_inode(vma->vm_file);
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-		if (unlikely(inode->i_state & INODE_STATE_SUS_KSTAT)) {
-			susfs_sus_ino_for_show_map_vma(inode->i_ino, &dev, &ino);
-			goto bypass_orig_flow;
-		}
-#endif
-		dev = inode->i_sb->s_dev;
-		ino = inode->i_ino;
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-bypass_orig_flow:
-#endif
-		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
-	}
+    struct inode *inode = file_inode(vma->vm_file);
+    struct dentry *dentry = NULL;
+    const char *path = NULL;
 
+    	if (inode) {
+        	dev = inode->i_sb->s_dev;
+        	ino = inode->i_ino;
+        	pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
+
+        	dentry = file->f_path.dentry;
+        	if (dentry) {
+            	path = dentry->d_name.name;
+
+            	if (path && strstr(path, "lineage")) {
+                	start = vma->vm_start;
+                	end = vma->vm_end;
+                	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
+                	name = "/dev/ashmem (deleted)";
+                	goto done;
+            	}
+
+            	if (path && strstr(path, "jit-zygote-cache")) {
+                	start = vma->vm_start;
+                	end = vma->vm_end;
+                	show_vma_header_prefix_fake(m, start, end, flags, pgoff, dev, ino);
+                	goto bypass;
+            	}
+        	}
+    	}
+    	}
 	start = vma->vm_start;
 	end = vma->vm_end;
 	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
-
+bypass:
 	/*
 	 * Print the dentry name for named mappings, and a
 	 * special [heap] marker for the heap:
