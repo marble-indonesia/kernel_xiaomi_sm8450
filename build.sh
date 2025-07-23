@@ -4,6 +4,9 @@
 # Copyright (C) 2024 Adithya R.
 
 SECONDS=0 # start builtin bash timer
+LOG_FILE="log.txt"
+> "$LOG_FILE"
+
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
 TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r416183b"
@@ -67,6 +70,7 @@ VDLKM_DIR="$KERNEL_DIR/vendor_dlkm"
 DEFCONFIG="gki_defconfig"
 DEFCONFIGS="vendor/waipio_GKI.config \
 vendor/xiaomi_GKI.config \
+vendor/addon.config \
 vendor/debugfs.config"
 
 MODULES_SRC="../sm8450-modules/qcom/opensource"
@@ -101,7 +105,7 @@ function m() {
     make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
         DTC_EXT="$PREBUILTS_DIR/bin/dtc" \
         DTC_OVERLAY_TEST_EXT="$PREBUILTS_DIR/bin/ufdt_apply_overlay" \
-        TARGET_PRODUCT=$TARGET $@ || exit $?
+        TARGET_PRODUCT=$TARGET $@ 2> >(tee -a "$LOG_FILE") || exit $?
 }
 
 $DO_CLEAN && (
@@ -114,11 +118,11 @@ mkdir -p out
 m $DEFCONFIG
 m ./scripts/kconfig/merge_config.sh $DEFCONFIGS vendor/${TARGET}_GKI.config
 scripts/config --file out/.config \
-    --set-str LOCALVERSION "-aospa-gki"
+    --set-str LOCALVERSION "-Zeta[balance]-kernel6969"
 $NO_LTO && (
     scripts/config --file out/.config \
         -d LTO_CLANG_FULL -e LTO_NONE \
-        --set-str LOCALVERSION "-aospa-gki-nolto"
+        --set-str LOCALVERSION "-Zeta[balance]-kernel6969"
     echo -e "\nDisabled LTO!"
 )
 
@@ -145,17 +149,18 @@ mv  out/arch/arm64/boot/dts/vendor/qcom/$DTB_WILDCARD.dtb \
     out/arch/arm64/boot/dts/vendor/qcom/$DTBO_WILDCARD.dtbo \
     out/dtbs-base
 rm -f out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
-../../build/android/merge_dtbs.py out/dtbs-base out/arch/arm64/boot/dts/vendor/qcom/ out/dtbs || exit $?
+
+../../build/android/merge_dtbs.py out/dtbs-base out/arch/arm64/boot/dts/vendor/qcom/ out/dtbs 2> >(tee -a "$LOG_FILE") || exit $?
 
 echo -e "\nCopying files...\n"
 
 # rm -rf AnyKernel3
 # if [ -d "$AK3_DIR" ]; then
-# 	cp -r $AK3_DIR AnyKernel3
-# 	git -C AnyKernel3 checkout marble &> /dev/null
+#   cp -r $AK3_DIR AnyKernel3
+#   git -C AnyKernel3 checkout marble &> /dev/null
 # elif ! git clone -q https://github.com/ghostrider-reborn/AnyKernel3 -b marble; then
-# 	echo -e "\nAnyKernel3 repo not found locally and couldn't clone from GitHub! Aborting..."
-# 	exit 1
+#   echo -e "\nAnyKernel3 repo not found locally and couldn't clone from GitHub! Aborting..."
+#   exit 1
 # fi
 # KERNEL_COPY_TO="AnyKernel3"
 # DTB_COPY_TO="AnyKernel3/dtb"
@@ -175,7 +180,7 @@ else
 fi
 echo "Copied dtb(s) to $DTB_COPY_TO."
 
-mkdtboimg.py create $DTBO_COPY_TO --page_size=4096 out/dtbs/*.dtbo
+mkdtboimg.py create $DTBO_COPY_TO --page_size=4096 out/dtbs/*.dtbo 2> >(tee -a "$LOG_FILE") || exit $?
 echo "Generated dtbo.img to $DTBO_COPY_TO".
 
 first_stage_modules="$(cat modules.list.msm.waipio)"
@@ -236,4 +241,3 @@ sed -E -i 's|([^: ]*/)([^/]*\.ko)([:]?)([ ]\|$)|/vendor_dlkm/lib/modules/\2\3\4|
 # rm -rf AnyKernel3
 
 echo -e "\nCompleted in $((SECONDS / 60)) minute(s) and $((SECONDS % 60)) second(s) !"
-# echo "$(realpath $ZIPNAME)"
