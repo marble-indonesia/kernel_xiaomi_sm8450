@@ -24,6 +24,9 @@
 #include <linux/parser.h>
 #include <linux/fsnotify.h>
 #include <linux/seq_file.h>
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
+#include <linux/susfs_def.h>
+#endif
 
 #define DEVPTS_DEFAULT_MODE 0600
 /*
@@ -610,9 +613,13 @@ extern int ksu_handle_devpts(struct inode*);
 void *devpts_get_priv(struct dentry *dentry)
 {
 #if defined(CONFIG_KSU_SUSFS_SUS_SU)
+	if (likely(susfs_is_current_proc_su_not_allowed())) {
+		goto orig_flow;
+	}
 	if (likely(ksu_devpts_hook)) {
 		ksu_handle_devpts(dentry->d_inode);
 	}
+orig_flow:
 #endif
 
 #ifdef CONFIG_KSU_MANUAL_HOOK
