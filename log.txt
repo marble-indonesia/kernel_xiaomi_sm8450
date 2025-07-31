@@ -1,5 +1,0 @@
-.config:7790:warning: unexpected data: >>>>>>> d045b52b85cb (feat(vendor): Enable KALLSYMS and KALLSYMS_ALL in addon.config for Apatch compatibility)
-"5.10.240-Zetta-kernel6969+v0.1-KSN-SFS-Zetta-kernel6969+v0.2-KSN-SFS-2+" exceeds 64 characters
-make[1]: *** [/home/smgreborn/kernel_platform/kernel_platform/xiaomi/sm8450/Makefile:1529: include/generated/utsrelease.h] Error 1
-make[1]: *** Waiting for unfinished jobs....
-make: *** [Makefile:196: __sub-make] Error 2
