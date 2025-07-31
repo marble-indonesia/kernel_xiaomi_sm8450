@@ -118,11 +118,11 @@ mkdir -p out
 m $DEFCONFIG
 m ./scripts/kconfig/merge_config.sh $DEFCONFIGS vendor/${TARGET}_GKI.config
 scripts/config --file out/.config \
-    --set-str LOCALVERSION "-Zeta[balance]-kernel6969"
+    --set-str LOCALVERSION "-Zetta-kernel6969-v1"
 $NO_LTO && (
     scripts/config --file out/.config \
         -d LTO_CLANG_FULL -e LTO_NONE \
-        --set-str LOCALVERSION "-Zeta[balance]-kernel6969"
+        --set-str LOCALVERSION "-Zetta-kernel6969-v1""
     echo -e "\nDisabled LTO!"
 )
 
