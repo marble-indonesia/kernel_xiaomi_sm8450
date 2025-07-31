@@ -414,12 +414,8 @@ static long do_faccessat(int dfd, const char __user *filename, int mode, int fla
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
 	const struct cred *old_cred = NULL;
 
-#ifdef CONFIG_KSU_MANUAL_HOOK
-	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-#endif
-
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
-	if (likely(susfs_is_sus_su_hooks_enabled)) {
+	if (susfs_is_sus_su_hooks_enabled) {
 		ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
 	}
 #endif
