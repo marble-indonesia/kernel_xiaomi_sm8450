@@ -380,7 +380,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
             	}
         	}
     	}
-    	}
+	}
+
 	start = vma->vm_start;
 	end = VMA_PAD_START(vma);
 	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
