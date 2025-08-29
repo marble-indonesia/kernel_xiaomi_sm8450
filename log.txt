@@ -1,0 +1,13 @@
+ld.lld: warning: ../lib/lz4/lz4.c:1772:0: stack frame size (16496) exceeds limit (2048) in function 'LZ4_compress_destSize'
+ld.lld: warning: ../lib/lz4/lz4hc.c:2318:0: stack frame size (66064) exceeds limit (2048) in function 'LZ4HC_compress_optimal'
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+usage: mkdtboimg.py create [argfile]
+mkdtboimg.py create: error: argument argfile: can't open '/home/smgreborn/kernel_platform/kernel_platform/device/xiaomi/marble-kernel/dtbs/dtbo.img': [Errno 20] Not a directory: '/home/smgreborn/kernel_platform/kernel_platform/device/xiaomi/marble-kernel/dtbs/dtbo.img'
