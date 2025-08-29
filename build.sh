@@ -9,7 +9,7 @@ LOG_FILE="log.txt"
 
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r416183b"
+TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/llvm-21"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
 
 DO_CLEAN=false
@@ -118,11 +118,11 @@ mkdir -p out
 m $DEFCONFIG
 m ./scripts/kconfig/merge_config.sh $DEFCONFIGS vendor/${TARGET}_GKI.config
 scripts/config --file out/.config \
-    --set-str LOCALVERSION "-Zetta-kernel6969-v1"
+    --set-str LOCALVERSION "-Zetta-kernel6969+v0.2-KSN-SFS-2"
 $NO_LTO && (
     scripts/config --file out/.config \
         -d LTO_CLANG_FULL -e LTO_NONE \
-        --set-str LOCALVERSION "-Zetta-kernel6969-v1""
+        --set-str LOCALVERSION "-Zetta-kernel6969+v0.2-KSN-SFS-2"
     echo -e "\nDisabled LTO!"
 )
 
