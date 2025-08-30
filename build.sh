@@ -3,9 +3,8 @@
 # Compile script for Xiaomi 8450 kernel, dts and modules with AOSPA
 # Copyright (C) 2024 Adithya R.
 
-SECONDS=0 # start builtin bash timer
+SECONDS=0
 LOG_FILE="log.txt"
-# Membersihkan file log sebelumnya di awal eksekusi
 > "$LOG_FILE"
 
 KP_ROOT="$(realpath ../..)"
@@ -106,11 +105,7 @@ esac
 
 export PATH="$TC_DIR/bin:$PREBUILTS_DIR/bin:$PATH"
 
-# Fungsi 'make' yang dimodifikasi untuk mencatat error ke log.txt
 function m() {
-    # Stderr (aliran error) dialihkan ke 'tee' yang akan menampilkannya di konsol
-    # dan sekaligus menyimpannya ke dalam file log.
-    # Jika 'make' gagal, skrip akan langsung berhenti.
     make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
         DTC_EXT="$PREBUILTS_DIR/bin/dtc" \
         DTC_OVERLAY_TEST_EXT="$PREBUILTS_DIR/bin/ufdt_apply_overlay" \
@@ -158,7 +153,6 @@ mv  out/arch/arm64/boot/dts/vendor/qcom/$DTB_WILDCARD.dtb \
     out/arch/arm64/boot/dts/vendor/qcom/$DTBO_WILDCARD.dtbo \
     out/dtbs-base
 rm -f out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
-# Mencatat error dari skrip python jika ada
 ../../build/android/merge_dtbs.py out/dtbs-base out/arch/arm64/boot/dts/vendor/qcom/ out/dtbs 2> >(tee -a "$LOG_FILE") || exit $?
 
 echo -e "\nCopying files...\n"
@@ -189,7 +183,6 @@ else
 fi
 echo "Copied dtb(s) to $DTB_COPY_TO."
 
-# Mencatat error dari skrip python jika ada
 mkdtboimg.py create $DTBO_COPY_TO --page_size=4096 out/dtbs/*.dtbo 2> >(tee -a "$LOG_FILE") || exit $?
 echo "Generated dtbo.img to $DTBO_COPY_TO".
 
