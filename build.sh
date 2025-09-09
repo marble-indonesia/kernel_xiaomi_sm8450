@@ -59,7 +59,6 @@ DTBO_COPY_TO="$DTB_COPY_TO/dtbo.img"
 VBOOT_DIR="$KERNEL_DIR/vendor_ramdisk"
 VDLKM_DIR="$KERNEL_DIR/vendor_dlkm"
 
-
 DEFCONFIG="gki_defconfig"
 DEFCONFIGS="vendor/waipio_GKI.config \
 vendor/xiaomi_GKI.config \
@@ -68,22 +67,22 @@ vendor/debugfs.config"
 
 MODULES_SRC="../sm8450-modules/qcom/opensource"
 MODULES="mmrm-driver \
-audio-kernel \
-camera-kernel \
-cvp-kernel \
-dataipa/drivers/platform/msm \
-datarmnet/core \
-datarmnet-ext/aps \
-datarmnet-ext/offload \
-datarmnet-ext/shs \
-datarmnet-ext/perf \
-datarmnet-ext/perf_tether \
-datarmnet-ext/sch \
-datarmnet-ext/wlan \
-display-drivers/msm \
-eva-kernel \
-video-driver \
-wlan/qcacld-3.0/.qca6490"
+          audio-kernel \
+          camera-kernel \
+          cvp-kernel \
+          dataipa/drivers/platform/msm \
+          datarmnet/core \
+          datarmnet-ext/aps \
+          datarmnet-ext/offload \
+          datarmnet-ext/shs \
+          datarmnet-ext/perf \
+          datarmnet-ext/perf_tether \
+          datarmnet-ext/sch \
+          datarmnet-ext/wlan \
+          display-drivers/msm \
+          eva-kernel \
+          video-driver \
+          wlan/qcacld-3.0/.qca6490"
 
 case "$TARGET" in
     "marble" )
@@ -96,9 +95,7 @@ case "$TARGET" in
         ;;
 esac
 
-
 export PATH="$TC_DIR/bin:$PREBUILTS_DIR/bin:$PATH"
-
 
 function m() {
     make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
@@ -164,19 +161,64 @@ else
 fi
 echo "Copied dtb(s) to $DTB_COPY_TO."
 
-mkdtboimg.py create --output $DTBO_COPY_TO --page_size=4096 out/dtbs/*.dtbo 2> >(tee -a "$LOG_FILE") || exit $?
+if ! mkdtboimg.py create $DTBO_COPY_TO --page_size=4096 out/dtbs/*.dtbo 2> >(tee -a "$LOG_FILE"); then
+    echo "ERROR: Failed to create DTBO image"
+    exit 1
+fi
 echo "Generated dtbo.img to $DTBO_COPY_TO"
 
+echo -e "\n=== MODULE DEBUGGING ==="
+echo "Checking module list files..."
 
-first_stage_modules="$(cat modules.list.msm.waipio)"
-second_stage_modules="$(cat modules.list.second_stage modules.list.second_stage.$TARGET)"
-vendor_dlkm_modules="$(cat modules.list.vendor_dlkm modules.list.vendor_dlkm.$TARGET)"
+for file in "modules.list.msm.waipio" "modules.list.second_stage" "modules.list.second_stage.$TARGET" "modules.list.vendor_dlkm" "modules.list.vendor_dlkm.$TARGET"; do
+    if [ -f "$file" ]; then
+        echo "✓ $file exists ($(wc -l < "$file") lines)"
+    else
+        echo "✗ $file MISSING!"
+    fi
+done
+
+first_stage_modules="$(cat modules.list.msm.waipio 2>/dev/null || echo "")"
+second_stage_modules="$(cat modules.list.second_stage modules.list.second_stage.$TARGET 2>/dev/null || echo "")"
+vendor_dlkm_modules="$(cat modules.list.vendor_dlkm modules.list.vendor_dlkm.$TARGET 2>/dev/null || echo "")"
 modules_out="out/modules/lib/modules/$(ls -t out/modules/lib/modules/ | head -n1)"
 
-rm -rf $VBOOT_DIR && mkdir -p $VBOOT_DIR
-rm -rf $VDLKM_DIR && mkdir -p $VDLKM_DIR
+echo "First stage modules count: $(echo "$first_stage_modules" | wc -w)"
+echo "Second stage modules count: $(echo "$second_stage_modules" | wc -w)"
+echo "Vendor DLKM modules count: $(echo "$vendor_dlkm_modules" | wc -w)"
+echo "Modules output path: $modules_out"
+
+if [ -d "$modules_out" ]; then
+    echo "✓ Modules directory exists"
+    echo "Available .ko files: $(find $modules_out -name '*.ko' | wc -l)"
+    echo "Sample modules:"
+    find $modules_out -name '*.ko' | head -5
+else
+    echo "✗ MODULES DIRECTORY NOT FOUND!"
+    echo "Available directories in out/modules/lib/modules/:"
+    ls -la out/modules/lib/modules/ 2>/dev/null || echo "No modules directory exists"
+    exit 1
+fi
+
+echo -e "\nCreating module directories..."
+rm -rf "$VBOOT_DIR" "$VDLKM_DIR"
+if ! mkdir -p "$VBOOT_DIR" "$VDLKM_DIR"; then
+    echo "ERROR: Failed to create module directories"
+    exit 1
+fi
+
+if [ -d "$VBOOT_DIR" ] && [ -d "$VDLKM_DIR" ]; then
+    echo "✓ Successfully created:"
+    echo "  - $VBOOT_DIR"
+    echo "  - $VDLKM_DIR"
+else
+    echo "ERROR: Module directories were not created!"
+    exit 1
+fi
+
 
 echo -e "\nCopying first stage modules..."
+first_stage_count=0
 for module in $first_stage_modules; do
     mod_path=$(find $modules_out -name "$module" -print -quit)
     if [ -z "$mod_path" ]; then
@@ -186,9 +228,12 @@ for module in $first_stage_modules; do
     cp $mod_path $VBOOT_DIR
     echo $module >> $VBOOT_DIR/modules.load
     echo $module >> $VBOOT_DIR/modules.load.recovery
+    echo "✓ Copied first stage: $module"
+    ((first_stage_count++))
 done
 
 echo -e "\nCopying second stage modules..."
+second_stage_count=0
 for module in $second_stage_modules; do
     mod_path=$(find $modules_out -name "$module" -print -quit)
     if [ -z "$mod_path" ]; then
@@ -199,9 +244,12 @@ for module in $second_stage_modules; do
     cp $mod_path $VDLKM_DIR
     echo $module >> $VBOOT_DIR/modules.load.recovery
     echo $module >> $VDLKM_DIR/modules.load
+    echo "✓ Copied second stage: $module"
+    ((second_stage_count++))
 done
 
 echo -e "\nCopying vendor_dlkm modules..."
+vendor_dlkm_count=0
 for module in $vendor_dlkm_modules; do
     mod_path=$(find $modules_out -name "$module" -print -quit)
     if [ -z "$mod_path" ]; then
@@ -210,14 +258,39 @@ for module in $vendor_dlkm_modules; do
     fi
     cp $mod_path $VDLKM_DIR
     echo $module >> $VDLKM_DIR/modules.load
+    echo "✓ Copied vendor_dlkm: $module"
+    ((vendor_dlkm_count++))
 done
 
 for dest_dir in $VBOOT_DIR $VDLKM_DIR; do
-    cp modules.vendor_blocklist.msm.waipio $dest_dir/modules.blocklist
-    cp $modules_out/modules.{alias,dep,softdep} $dest_dir
+    if [ -f "modules.vendor_blocklist.msm.waipio" ]; then
+        cp modules.vendor_blocklist.msm.waipio $dest_dir/modules.blocklist
+    fi
+    cp $modules_out/modules.{alias,dep,softdep} $dest_dir 2>/dev/null || true
 done
 
-sed -E -i 's|([^: ]*/)([^/]*\.ko)([:]?)([ ]\|$)|/lib/modules/\2\3\4|g' $VBOOT_DIR/modules.dep
-sed -E -i 's|([^: ]*/)([^/]*\.ko)([:]?)([ ]\|$)|/vendor_dlkm/lib/modules/\2\3\4|g' $VDLKM_DIR/modules.dep
+if [ -f "$VBOOT_DIR/modules.dep" ]; then
+   sed -E -i 's|([^: ]*/)([^/]*\.ko)([:]?)([ ]|$)|/lib/modules/\2\3\4|g' "$VBOOT_DIR/modules.dep"
+fi
+
+if [ -f "$VDLKM_DIR/modules.dep" ]; then
+    sed -E -i 's|([^: ]*/)([^/]*\.ko)([:]?)([ ]|$)|/vendor_dlkm/lib/modules/\2\3\4|g' "$VDLKM_DIR/modules.dep"
+fi
+
+
+echo -e "\n=== BUILD SUMMARY ==="
+echo "Target: $TARGET"
+echo "Kernel: $(ls -lh $KERNEL_COPY_TO/Image 2>/dev/null | awk '{print $5}' || echo 'NOT FOUND')"
+echo "DTBs: $(ls $DTB_COPY_TO/*.dtb 2>/dev/null | wc -l || echo '0') files"
+echo "DTBO: $(ls -lh $DTBO_COPY_TO 2>/dev/null | awk '{print $5}' || echo 'NOT FOUND')"
+echo "Vendor Ramdisk: $(ls $VBOOT_DIR/*.ko 2>/dev/null | wc -l || echo '0') modules"
+echo "Vendor DLKM: $(ls $VDLKM_DIR/*.ko 2>/dev/null | wc -l || echo '0') modules"
+echo "Modules copied: first_stage=$first_stage_count, second_stage=$second_stage_count, vendor_dlkm=$vendor_dlkm_count"
+
+if [ -d "$VBOOT_DIR" ] && [ -d "$VDLKM_DIR" ]; then
+    echo "✅ All directories created successfully!"
+else
+    echo "❌ Some module directories are missing!"
+fi
 
 echo -e "\nCompleted in $((SECONDS / 60)) minute(s) and $((SECONDS % 60)) second(s)!"
