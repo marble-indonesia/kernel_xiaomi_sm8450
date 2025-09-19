@@ -9,7 +9,7 @@ LOG_FILE="log.txt"
 
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-21"
+TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/llvm-21"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
 
 DO_CLEAN=false

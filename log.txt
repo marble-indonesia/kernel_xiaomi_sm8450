@@ -1,4 +1,22 @@
-../scripts/kconfig/Makefile:93: *** No configuration exists for this target on this architecture.  Stop.
-make[2]: *** [../Makefile:648: vendor/addon.config] Error 2
-make[1]: *** [/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/Makefile:361: __build_one_by_one] Error 2
+../drivers/bus/mhi/host/pm.c:474:27: error: use of undeclared identifier 'prev_state'
+  474 |         if (MHI_REG_ACCESS_VALID(prev_state)) {
+      |                                  ^~~~~~~~~~
+../drivers/bus/mhi/host/pm.c:491:7: error: unused variable 'in_reset' [-Werror,-Wunused-variable]
+  491 |                 u32 in_reset = -1;
+      |                     ^~~~~~~~
+../drivers/bus/mhi/host/pm.c:492:17: error: unused variable 'timeout' [-Werror,-Wunused-variable]
+  492 |                 unsigned long timeout = msecs_to_jiffies(mhi_cntrl->timeout_ms);
+      |                               ^~~~~~~
+../drivers/bus/mhi/host/pm.c:496:9: error: use of undeclared label 'skip_mhi_reset'
+  496 |                         goto skip_mhi_reset;
+      |                              ^
+4 errors generated.
+make[5]: *** [../scripts/Makefile.build:279: drivers/bus/mhi/host/pm.o] Error 1
+make[5]: *** Waiting for unfinished jobs....
+make[4]: *** [../scripts/Makefile.build:522: drivers/bus/mhi/host] Error 2
+make[3]: *** [../scripts/Makefile.build:522: drivers/bus/mhi] Error 2
+make[2]: *** [../scripts/Makefile.build:522: drivers/bus] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/Makefile:1999: drivers] Error 2
+make[1]: *** Waiting for unfinished jobs....
 make: *** [Makefile:196: __sub-make] Error 2
