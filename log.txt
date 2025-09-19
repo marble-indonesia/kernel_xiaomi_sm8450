@@ -1,0 +1,4 @@
+../scripts/kconfig/Makefile:93: *** No configuration exists for this target on this architecture.  Stop.
+make[2]: *** [../Makefile:648: vendor/addon.config] Error 2
+make[1]: *** [/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/Makefile:361: __build_one_by_one] Error 2
+make: *** [Makefile:196: __sub-make] Error 2
