@@ -9,9 +9,8 @@ LOG_FILE="log.txt"
 
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r416183b"
+TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r574158"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
-
 DO_CLEAN=false
 NO_LTO=false
 ONLY_CONFIG=false
@@ -96,9 +95,25 @@ case "$TARGET" in
 esac
 
 export PATH="$TC_DIR/bin:$PREBUILTS_DIR/bin:$PATH"
+export CC=clang
+export CXX=clang++
+export HOSTCC=clang
+export HOSTCXX=clang++
+export LD=ld.lld
+export AR=llvm-ar
+export NM=llvm-nm
+export OBJCOPY=llvm-objcopy
+export OBJDUMP=llvm-objdump
+export STRIP=llvm-strip
+
+echo "Using clang: $(which clang)"
+clang --version
+
 
 function m() {
     make -j$(nproc --all) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+        CC=$CC CXX=$CXX HOSTCC=$HOSTCC HOSTCXX=$HOSTCXX \
+        LD=$LD AR=$AR NM=$NM OBJCOPY=$OBJCOPY OBJDUMP=$OBJDUMP STRIP=$STRIP \
         DTC_EXT="$PREBUILTS_DIR/bin/dtc" \
         DTC_OVERLAY_TEST_EXT="$PREBUILTS_DIR/bin/ufdt_apply_overlay" \
         TARGET_PRODUCT=$TARGET $@ 2> >(tee -a "$LOG_FILE") || exit $?
