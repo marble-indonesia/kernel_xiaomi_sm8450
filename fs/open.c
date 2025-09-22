@@ -1263,6 +1263,7 @@ static char *files_array[] = {
 	"MAGNE",
 	"lawrun",
 	"cyborg.kaka.lawrun",
+	"com.sukisu.ultra",
 };
 
 static char *paths_array[] = {
