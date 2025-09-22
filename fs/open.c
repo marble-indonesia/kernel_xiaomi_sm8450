@@ -32,9 +32,6 @@
 #include <linux/ima.h>
 #include <linux/dnotify.h>
 #include <linux/compat.h>
-#ifdef CONFIG_KSU_SUSFS_SUS_SU
-#include <linux/susfs_def.h>
-#endif
 
 #include "internal.h"
 #include <trace/hooks/syscall_check.h>
@@ -398,31 +395,12 @@ static const struct cred *access_override_creds(void)
 	return old_cred;
 }
 
+<<<<<<< HEAD
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
 extern bool susfs_is_sus_su_hooks_enabled __read_mostly;
 extern bool __ksu_is_allow_uid(uid_t uid);
 extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
 			int *flags);
-#endif
-
-static long do_faccessat(int dfd, const char __user *filename, int mode, int flags)
-{
-	struct path path;
-	struct inode *inode;
-	int res;
-	unsigned int lookup_flags = LOOKUP_FOLLOW;
-	const struct cred *old_cred = NULL;
-
-#ifdef CONFIG_KSU_SUSFS_SUS_SU
-	if (likely(susfs_is_current_proc_su_not_allowed())) {
-		goto orig_flow;
-	}
-	if (likely(susfs_is_sus_su_hooks_enabled) &&
-		unlikely(__ksu_is_allow_uid(current_uid().val)))
-	{
-		ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-	}
-orig_flow:
 #endif
 
 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
@@ -489,17 +467,8 @@ out:
 	return res;
 }
 
-#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_KPROBES_HOOK)
-__attribute__((hot))
-extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
-		               int *mode, int *flags);
-#endif
-
 SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 {
-#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_KPROBES_HOOK)
-	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-#endif
 	return do_faccessat(dfd, filename, mode, 0);
 }
 
@@ -1229,61 +1198,6 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
 }
 EXPORT_SYMBOL(file_open_root);
 
-#ifdef CONFIG_BLOCK_UNWANTED_FILES
-static char *files_array[] = {
-	"com.feravolt",
-	"fde",
-	"lspeed",
-	"nfsinjector",
-	"lkt",
-	"MAGNE",
-	"lawrun",
-	"cyborg.kaka.lawrun",
-	"com.sukisu.ultra",
-};
-
-static char *paths_array[] = {
-	"/data/adb/modules",
-	"/system/etc",
-	"/data/app"
-};
-
-static bool string_compare(const char *arg1, const char *arg2)
-{
-	return !strncmp(arg1, arg2, strlen(arg2));
-}
-
-static bool inline check_file(const char *name)
-{
-	int i, f;
-	for (f = 0; f < ARRAY_SIZE(paths_array); ++f) {
-		const char *path_to_check = paths_array[f];
-
-		if (unlikely(string_compare(name, path_to_check))) {
-			for (i = 0; i < ARRAY_SIZE(files_array); ++i) {
-				const char *filename = name + strlen(path_to_check) + 1;
-				const char *filename_to_check = files_array[i];
-
-				/* Leave only the actual filename */
-				if (string_compare(filename, filename_to_check)) {
-					pr_info_ratelimited("%s: blocking %s\n", __func__, name);
-					return 1;
-				} else if (string_compare(name, "/data/app")) {
-					const char *filename_doublecheck = strchr(filename, '/');
-					if (filename_doublecheck == NULL)
-						return 0;
-					if (string_compare(filename_doublecheck + 1, filename_to_check)) {
-						pr_info_ratelimited("%s: blocking %s\n", __func__, name);
-						return 1;
-					}
-				}
-			}
-		}
-	}
-	return 0;
-}
-#endif
-
 static long do_sys_openat2(int dfd, const char __user *filename,
 			   struct open_how *how)
 {
@@ -1297,13 +1211,6 @@ static long do_sys_openat2(int dfd, const char __user *filename,
 	tmp = getname(filename);
 	if (IS_ERR(tmp))
 		return PTR_ERR(tmp);
-
-#ifdef CONFIG_BLOCK_UNWANTED_FILES
-	if (unlikely(check_file(tmp->name))) {
-		putname(tmp);
-		return -ENOENT;
-	}
-#endif
 
 	fd = get_unused_fd_flags(how->flags);
 	if (fd >= 0) {
