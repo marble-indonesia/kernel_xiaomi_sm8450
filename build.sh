@@ -128,10 +128,10 @@ echo -e "Generating config...\n"
 mkdir -p out
 m $DEFCONFIG
 m ./scripts/kconfig/merge_config.sh $DEFCONFIGS vendor/${TARGET}_GKI.config
-scripts/config --file out/.config --set-str LOCALVERSION "-Zetta-kernel6969-LTO"
+scripts/config --file out/.config --set-str LOCALVERSION "-Zetta.Ocen-kernel-LTO"
 
 if $NO_LTO; then
-    scripts/config --file out/.config -d LTO_CLANG_FULL -e LTO_NONE --set-str LOCALVERSION "-Zetta-kernel6969-NoLTO"
+    scripts/config --file out/.config -d LTO_CLANG_FULL -e LTO_NONE --set-str LOCALVERSION "-Zetta.Ocen-Kernel-NoLTO"
     echo -e "\nDisabled LTO!"
 fi
 
