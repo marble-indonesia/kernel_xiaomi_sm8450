@@ -177,6 +177,61 @@ config QTI_CPUFREQ_STATS_SCMI_CLIENT
 	  SCMI client driver registers itself with SCMI framework for cpufreq stats
 	  vendor protocol.
 
-	  This driver delivers the cpufreq stats protocol handle to interface
-	  driver, and interface driver will use this handle to communicate with
-	  cpucp.
+	  This driver gathers MPAM configuration parameters from sysfs
+	  userspace and relays them to CPUCP via SCMI communication.
+	  It is intended to be used by clients familiar with modifying
+	  the ARM MPAM configuration settings.
+
+config QTI_CPUFREQ_STATS_SCMI_V2
+	tristate "Qualcomm Technologies Inc. SCMI client driver for CPU and L3 cpu freq stats"
+	depends on QTI_SCMI_VENDOR_PROTOCOL
+	default n
+	help
+	  Driver to expose CPU freq stats debugfs nodes to user space.
+
+	  This driver is used to expose debugfs interface to communicate
+	  with cpucp for CPU freq stats based on SCMI consolidation protocol.
+	  It is intended to be used by clients to get CPU and L3 residency data.
+
+config QTI_DYNPF_SCMI
+	tristate "Qualcomm Technologies Inc. SCMI client driver for DYNPF"
+	depends on QTI_SCMI_VENDOR_PROTOCOL
+	default n
+	help
+	  Driver to expose DYNPF configuration APIs to userspace via sysfs.
+
+	  This driver gathers DYNPF configuration parameters from sysfs
+	  userspace and relays them to CPUCP via SCMI communication.
+	  It is intended to be used by clients familiar with modifying
+	  the DYNPF settings.
+
+config QCOM_DCVS_BOOST
+	tristate "Qualcomm DCVS timed boost (DDR/LLCC/L3)"
+	depends on QCOM_DCVS
+	help
+	  Enable a DCVS booster that temporarily raises the DDR, LLCC,
+	  and L3 DCVS votes to selected kHz for specified duration using
+	  the voter api.
+
+if QCOM_DCVS_BOOST
+
+config QCOM_DCVS_BOOST_KHZ_DDR
+	int "DDR boost preset (kHz)"
+	default 0
+	help
+	  kHz floor to vote on DDR during a boost window; 0 disables DDR boosting.
+
+config QCOM_DCVS_BOOST_KHZ_LLCC
+	int "LLCC boost preset (kHz)"
+	default 0
+	help
+	  kHz floor to vote on LLCC during a boost window; 0 disables LLCC boosting.
+
+config QCOM_DCVS_BOOST_KHZ_L3
+	int "L3 boost preset (kHz)"
+	default 0
+	help
+	  kHz floor to vote on L3 during a boost window; 0 disables L3 boosting.
+
+endif
+>>>>>>> 39a22e11e62c (soc/qcom/dcvs: Implement a simple boosting driver)
