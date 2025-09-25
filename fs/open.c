@@ -32,9 +32,6 @@
 #include <linux/ima.h>
 #include <linux/dnotify.h>
 #include <linux/compat.h>
-#ifdef CONFIG_KSU_SUSFS_SUS_SU
-#include <linux/susfs_def.h>
-#endif
 
 #include "internal.h"
 #include <trace/hooks/syscall_check.h>
@@ -403,6 +400,7 @@ static const struct cred *access_override_creds(void)
 	return old_cred;
 }
 
+<<<<<<< HEAD
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
 extern bool susfs_is_sus_su_hooks_enabled __read_mostly;
 extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
@@ -416,6 +414,8 @@ extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int
 			int *flags);
 #endif
 
+=======
+>>>>>>> 14f6e15a408f (Revert "susfs4ksu: import 1.5.9 susfs4ksu: import 1.5.9")
 static long do_faccessat(int dfd, const char __user *filename, int mode, int flags)
 {
 	struct path path;
@@ -424,6 +424,7 @@ static long do_faccessat(int dfd, const char __user *filename, int mode, int fla
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
 	const struct cred *old_cred = NULL;
 
+<<<<<<< HEAD
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
 	if (susfs_is_sus_su_hooks_enabled) {
 		ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
@@ -446,6 +447,8 @@ static long do_faccessat(int dfd, const char __user *filename, int mode, int fla
 orig_flow:
 #endif
 
+=======
+>>>>>>> 14f6e15a408f (Revert "susfs4ksu: import 1.5.9 susfs4ksu: import 1.5.9")
 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
 		return -EINVAL;
 
