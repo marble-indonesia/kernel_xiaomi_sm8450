@@ -459,8 +459,7 @@ out_unlock:
 	return ret;
 }
 
-static int __irq_set_affinity(unsigned int irq, const struct cpumask *mask,
-			      bool force)
+int __irq_set_affinity(unsigned int irq, const struct cpumask *mask, bool force)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
 	unsigned long flags;
@@ -475,6 +474,7 @@ static int __irq_set_affinity(unsigned int irq, const struct cpumask *mask,
 	return ret;
 }
 
+<<<<<<< HEAD
 /**
  * irq_set_affinity - Set the irq affinity of a given irq
  * @irq:	Interrupt to set affinity
