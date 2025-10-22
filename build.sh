@@ -107,21 +107,7 @@ LOG_FILE="log.txt"
 
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
-<<<<<<< HEAD
-<<<<<<< HEAD
 TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/XClang-22.1.2-Polly"
-=======
-<<<<<<< HEAD
-=======
->>>>>>> aa5b554de1be (cleanup susfs)
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/llvm-22"
-=======
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/greenforce-clang"
->>>>>>> parent of f71629a2b889 (kernelsu)
-<<<<<<< HEAD
->>>>>>> aa5b554de1be (cleanup susfs)
-=======
->>>>>>> aa5b554de1be (cleanup susfs)
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
 DO_CLEAN=false
 NO_LTO=false

@@ -818,7 +818,6 @@ ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
 KBUILD_CFLAGS    += -mllvm -polly-run-dce
 endif
 endif
-endif
 
 # Tell gcc to never replace conditional load with a non-conditional one
 KBUILD_CFLAGS	+= $(call cc-option,--param=allow-store-data-races=0)
@@ -897,7 +896,6 @@ KBUILD_LDFLAGS += -mllvm -ml-inliner-model-selector=arm64-mixed
 
 KBUILD_CFLAGS  += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
 KBUILD_LDFLAGS += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
-endif
 endif
 
 ifdef CONFIG_LTO_CLANG
