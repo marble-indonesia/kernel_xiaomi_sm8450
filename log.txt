@@ -1,11 +1,41 @@
-ld.lld: warning: ../lib/lz4/lz4.c:1772:0: stack frame size (16496) exceeds limit (2048) in function 'LZ4_compress_destSize'
-ld.lld: warning: ../lib/lz4/lz4hc.c:2318:0: stack frame size (66016) exceeds limit (2048) in function 'LZ4HC_compress_optimal'
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+../scripts/Makefile.build:45: ../techpack/video/Makefile: No such file or directory
+make[3]: *** No rule to make target '../techpack/video/Makefile'.  Stop.
+make[2]: *** [../scripts/Makefile.build:522: techpack/video] Error 2
+make[1]: *** [/home/maul/kernel/kernel_platform/xiaomi/sm8450/Makefile:2059: techpack] Error 2
+make[1]: *** Waiting for unfinished jobs....
+In file included from ../drivers/input/misc/aw86927_haptic/aw_haptic.c:65:
+../drivers/input/misc/aw86927_haptic/ringbuffer.h:22:9: error: 'MIN' macro redefined [-Werror,-Wmacro-redefined]
+   22 | #define MIN(x, y) ((x) < (y) ? (x) : (y))
+      |         ^
+../include/linux/minmax.h:314:9: note: previous definition is here
+  314 | #define MIN(a, b) __cmp(min, a, b)
+      |         ^
+1 error generated.
+make[5]: *** [../scripts/Makefile.build:279: drivers/input/misc/aw86927_haptic/aw_haptic.o] Error 1
+make[4]: *** [../scripts/Makefile.build:522: drivers/input/misc/aw86927_haptic] Error 2
+make[4]: *** Waiting for unfinished jobs....
+make[3]: *** [../scripts/Makefile.build:522: drivers/input/misc] Error 2
+make[3]: *** Waiting for unfinished jobs....
+In file included from ../drivers/input/touchscreen/synaptics_s3907/synaptics_tcm_spi.c:37:
+../drivers/input/touchscreen/synaptics_s3907/synaptics_tcm_core.h:153:9: error: 'MAX' macro redefined [-Werror,-Wmacro-redefined]
+  153 | #define MAX(a, b)                                                              \
+      |         ^
+../include/linux/minmax.h:315:9: note: previous definition is here
+  315 | #define MAX(a, b) __cmp(max, a, b)
+      |         ^
+In file included from ../drivers/input/touchscreen/synaptics_s3907/synaptics_tcm_spi.c:37:
+../drivers/input/touchscreen/synaptics_s3907/synaptics_tcm_core.h:160:9: error: 'MIN' macro redefined [-Werror,-Wmacro-redefined]
+  160 | #define MIN(a, b)                                                              \
+      |         ^
+../include/linux/minmax.h:314:9: note: previous definition is here
+  314 | #define MIN(a, b) __cmp(min, a, b)
+      |         ^
+2 errors generated.
+make[5]: *** [../scripts/Makefile.build:279: drivers/input/touchscreen/synaptics_s3907/synaptics_tcm_spi.o] Error 1
+make[4]: *** [../scripts/Makefile.build:522: drivers/input/touchscreen/synaptics_s3907] Error 2
+make[4]: *** Waiting for unfinished jobs....
+make[3]: *** [../scripts/Makefile.build:522: drivers/input/touchscreen] Error 2
+make[2]: *** [../scripts/Makefile.build:522: drivers/input] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/home/maul/kernel/kernel_platform/xiaomi/sm8450/Makefile:2059: drivers] Error 2
+make: *** [Makefile:196: __sub-make] Error 2
