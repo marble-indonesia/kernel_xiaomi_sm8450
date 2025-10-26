@@ -8,6 +8,11 @@
 #include <../../../kernel/sched/sched.h>
 #include <linux/string.h>
 
+#ifdef CONFIG_BINDER_PRIO_DEBUG
+#include <linux/module.h>
+
+static struct binder_priority home_saved_priority = {SCHED_NORMAL, 120};
+
 static const char *task_name[] = {
 	"com.miui.home",
 	"droid.launcher3",  // com.android.launcher3
@@ -58,12 +63,25 @@ static void extend_surfacefinger_binder_set_priority_handler(void *data, struct 
 
 static void extend_surfacefinger_binder_trans_handler(void *data, struct binder_proc *target_proc,
     struct binder_proc *proc,struct binder_thread *thread, struct binder_transaction_data *tr) {
-	if (target_proc && target_proc->tsk && strncmp(target_proc->tsk->comm, "surfaceflinger",
-		strlen("surfaceflinger")) == 0) {
-		if (thread && proc && tr && thread->transaction_stack
-			&& (!(thread->transaction_stack->flags & TF_ONE_WAY))) {
-			target_proc->default_priority.sched_policy = SCHED_FIFO;
-			target_proc->default_priority.prio = 98;
+	if (target_proc && target_proc->tsk) {
+		if (strncmp(target_proc->tsk->comm, "surfaceflinger", strlen("surfaceflinger")) == 0) {
+			if (thread && proc && tr && thread->transaction_stack
+			    && (!(thread->transaction_stack->flags & TF_ONE_WAY))) {
+				target_proc->default_priority.sched_policy = SCHED_FIFO;
+				target_proc->default_priority.prio = 98;
+			}
+		} else if (strncmp(target_proc->tsk->comm, "com.miui.home", strlen("com.miui.home")) == 0) {
+			if (rt_policy(target_proc->tsk->policy)) {
+				if (!rt_policy(target_proc->default_priority.sched_policy)) {
+					home_saved_priority = target_proc->default_priority;
+					target_proc->default_priority.sched_policy = SCHED_FIFO;
+					target_proc->default_priority.prio = 98;
+				}
+			} else {
+				if (rt_policy(target_proc->default_priority.sched_policy)) {
+					target_proc->default_priority = home_saved_priority;
+				}
+			}
 		}
 	}
 }
