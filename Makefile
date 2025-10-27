@@ -897,6 +897,7 @@ KBUILD_LDFLAGS += -mllvm -ml-inliner-model-selector=arm64-mixed
 KBUILD_CFLAGS  += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
 KBUILD_LDFLAGS += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
 endif
+endif
 
 ifdef CONFIG_LTO_CLANG
 KBUILD_LDFLAGS += -O3 --strip-debug
