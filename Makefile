@@ -835,6 +835,8 @@ KBUILD_CFLAGS-$(CONFIG_WERROR) += -Werror
 KBUILD_CFLAGS += $(KBUILD_CFLAGS-y)
 
 ifdef CONFIG_CC_IS_CLANG
+# Enable hot cold split optimization
+KBUILD_CFLAGS   += -mllvm -hot-cold-split=true
 KBUILD_CPPFLAGS += -Qunused-arguments
 KBUILD_CFLAGS += -Wno-format-invalid-specifier
 KBUILD_CFLAGS += -Wno-gnu
@@ -842,6 +844,12 @@ KBUILD_CFLAGS += -Wno-gnu
 # source of a reference will be _MergedGlobals and not on of the whitelisted names.
 # See modpost pattern 2
 KBUILD_CFLAGS += -mno-global-merge
+
+ifeq ($(call cc-option-yn, -mllvm -regalloc-enable-advisor=release),y)
+# Enable MLGO optimizations for register allocation
+KBUILD_CFLAGS   += -mllvm -regalloc-enable-advisor=release
+KBUILD_LDFLAGS  += -mllvm -regalloc-enable-advisor=release
+endif
 
 # Clang may emit a warning when a const variable, such as the dummy variables
 # in typecheck(), or const member of an aggregate type are not initialized,
@@ -865,6 +873,19 @@ endif
 # These warnings generated too much noise in a regular build.
 # Use make W=1 to enable them (see scripts/Makefile.extrawarn)
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
+
+# Enable MLGO optimizations for inliner
+ifeq ($(call cc-option-yn, -ml-inliner-model-selector=arm64-mixed),y)
+KBUILD_CFLAGS  += -mllvm -enable-ml-inliner=release
+KBUILD_LDFLAGS += -mllvm -enable-ml-inliner=release
+
+KBUILD_CFLAGS  += -mllvm -ml-inliner-model-selector=arm64-mixed
+KBUILD_LDFLAGS += -mllvm -ml-inliner-model-selector=arm64-mixed
+
+KBUILD_CFLAGS  += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
+KBUILD_LDFLAGS += -mllvm -ml-inliner-skip-policy=if-caller-not-cold
+endif
+endif
 
 ifdef CONFIG_LTO_CLANG
 KBUILD_LDFLAGS += -O3 --strip-debug
