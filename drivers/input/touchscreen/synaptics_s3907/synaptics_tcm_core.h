@@ -150,6 +150,8 @@ extern int power_supply_is_system_supplied(void);
 		}                                                              \
 	} while (0)
 
+#undef MIN
+#undef MAX
 #define MAX(a, b)                                                              \
 	({                                                                     \
 		__typeof__(a) _a = (a);                                        \
