@@ -1260,8 +1260,9 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 				memcpy(bcdev->wls_debug_data, chg_debug_data->data, CHG_DEBUG_DATA_LEN);
 				ack_set = true;
 			} else if (chg_debug_data->type == CHG_BATT_SN_CODE) {
-				memset(bcdev->batt_sn_data, '\0', CHG_DEBUG_DATA_LEN);
-				memcpy(bcdev->batt_sn_data, chg_debug_data->data, CHG_DEBUG_DATA_LEN);
+				memcpy(bcdev->batt_sn_data,
+				       chg_debug_data->data,
+				       CHG_DEBUG_DATA_LEN);
 				ack_set = true;
 			}
 			break;
