@@ -556,11 +556,6 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 			} else if (chg_debug_data->type == CHG_WLS_DEBUG) {
 				memcpy(bcdev->wls_debug_data, chg_debug_data->data, CHG_DEBUG_DATA_LEN);
 				ack_set = true;
-			} else if (chg_debug_data->type == CHG_BATT_SN_CODE) {
-				memcpy(bcdev->batt_sn_data,
-				       chg_debug_data->data,
-				       CHG_DEBUG_DATA_LEN);
-				ack_set = true;
 			}
 			break;
 		}
@@ -2198,13 +2193,13 @@ static ssize_t charging_enabled_store(struct class *c,
 	if (val) {
 		/*
 		 * Enable charging, i.e. set the restricted current back to
-		 * the thermal limit and unset the restriction boolean flag.
+		 * its default value and unset the restriction boolean flag.
 		 */
 		rc = __battery_psy_set_charge_current(bcdev,
-				bcdev->thermal_fcc_ua);
+				DEFAULT_RESTRICT_FCC_UA);
 		if (rc < 0)
 			return rc;
-		bcdev->restrict_fcc_ua = bcdev->thermal_fcc_ua;
+		bcdev->restrict_fcc_ua = DEFAULT_RESTRICT_FCC_UA;
 		bcdev->restrict_chg_en = 0;
 	} else {
 		/*
