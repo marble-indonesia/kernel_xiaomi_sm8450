@@ -27,11 +27,12 @@ extern unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 				 struct mem_cgroup *memcg,
 				 int priority);
 
+static int kshrink_slabd_pid;
 static struct task_struct *shrink_slabd_tsk = NULL;
 static bool async_shrink_slabd_setup = false;
-static wait_queue_head_t shrink_slabd_wait;
+wait_queue_head_t shrink_slabd_wait;
 
-static struct async_slabd_parameter {
+struct async_slabd_parameter {
 	struct mem_cgroup *shrink_slabd_memcg;
 	gfp_t shrink_slabd_gfp_mask;
 	atomic_t shrink_slabd_runnable;
@@ -40,12 +41,12 @@ static struct async_slabd_parameter {
 } asp;
 
 
-static inline bool is_shrink_slabd_task(struct task_struct *tsk)
+static bool is_shrink_slabd_task(struct task_struct *tsk)
 {
-	return (shrink_slabd_tsk->pid == tsk->pid);
+	return tsk->pid == kshrink_slabd_pid;
 }
 
-static bool wakeup_shrink_slabd(gfp_t gfp_mask, int nid,
+bool wakeup_shrink_slabd(gfp_t gfp_mask, int nid,
 				 struct mem_cgroup *memcg,
 				 int priority)
 {
@@ -63,7 +64,7 @@ static bool wakeup_shrink_slabd(gfp_t gfp_mask, int nid,
 	return true;
 }
 
-static void set_async_slabd_cpus(void)
+void set_async_slabd_cpus(void)
 {
 	struct cpumask mask;
 	struct cpumask *cpumask = &mask;
@@ -200,23 +201,17 @@ static int __init shrink_async_init(void)
 		pr_err("Failed to start shrink_slabd on node 0\n");
 		ret = PTR_ERR(shrink_slabd_tsk);
 		shrink_slabd_tsk = NULL;
-		unregister_shrink_async_vendor_hooks();
 		return ret;
 	}
 
+	kshrink_slabd_pid = shrink_slabd_tsk->pid;
 	async_shrink_slabd_setup = true;
 
-	pr_info("kshrink_async succeed!\n");
 	return 0;
 }
 
 static void __exit shrink_async_exit(void)
 {
-	if (shrink_slabd_tsk) {
-		kthread_stop(shrink_slabd_tsk);
-		shrink_slabd_tsk = NULL;
-	}
-
 	unregister_shrink_async_vendor_hooks();
 
 	pr_info("shrink_async exit succeed!\n");
