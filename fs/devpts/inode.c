@@ -596,7 +596,6 @@ struct dentry *devpts_pty_new(struct pts_fs_info *fsi, int index, void *priv)
 	return dentry;
 }
 
-
 /**
  * devpts_get_priv -- get private data for a slave
  * @pts_inode: inode of the slave
@@ -605,7 +604,6 @@ struct dentry *devpts_pty_new(struct pts_fs_info *fsi, int index, void *priv)
  */
 void *devpts_get_priv(struct dentry *dentry)
 {
-
 	if (dentry->d_sb->s_magic != DEVPTS_SUPER_MAGIC)
 		return NULL;
 	return dentry->d_fsdata;
