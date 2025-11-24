@@ -1,11 +1,30 @@
-ld.lld: warning: ../lib/lz4/lz4.c:1772:0: stack frame size (16496) exceeds limit (2048) in function 'LZ4_compress_destSize'
-ld.lld: warning: ../lib/lz4/lz4hc.c:2320:0: stack frame size (66064) exceeds limit (2048) in function 'LZ4HC_compress_optimal'
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+../kernel/sched/fair.c:5764:7: error: implicit declaration of function 'hrtick_enabled_fair' [-Werror,-Wimplicit-function-declaration]
+ 5764 |         if (!hrtick_enabled_fair(rq) || curr->sched_class != &fair_sched_class)
+      |              ^
+../kernel/sched/fair.c:5764:7: note: did you mean 'hrtick_enabled'?
+../kernel/sched/sched.h:2090:19: note: 'hrtick_enabled' declared here
+ 2090 | static inline int hrtick_enabled(struct rq *rq)
+      |                   ^
+../kernel/sched/fair.c:7581:6: error: implicit declaration of function 'hrtick_enabled_fair' [-Werror,-Wimplicit-function-declaration]
+ 7581 |         if (hrtick_enabled_fair(rq))
+      |             ^
+../kernel/sched/fair.c:10389:7: error: no member named 'last_decay_max_lb_cost' in 'struct sched_domain'
+ 10389 |                 sd->last_decay_max_lb_cost = jiffies;
+       |                 ~~  ^
+../kernel/sched/fair.c:10390:37: error: no member named 'last_decay_max_lb_cost' in 'struct sched_domain'
+ 10390 |         } else if (time_after(jiffies, sd->last_decay_max_lb_cost + HZ)) {
+       |                                        ~~  ^
+../kernel/sched/fair.c:10390:37: error: no member named 'last_decay_max_lb_cost' in 'struct sched_domain'
+ 10390 |         } else if (time_after(jiffies, sd->last_decay_max_lb_cost + HZ)) {
+       |                                        ~~  ^
+../kernel/sched/fair.c:10397:7: error: no member named 'last_decay_max_lb_cost' in 'struct sched_domain'
+ 10397 |                 sd->last_decay_max_lb_cost = jiffies;
+       |                 ~~  ^
+6 errors generated.
+make[3]: *** [../scripts/Makefile.build:279: kernel/sched/fair.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [../scripts/Makefile.build:522: kernel/sched] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/home/smgreborn/kernel/kernel_platform/xiaomi/sm8450/Makefile:2059: kernel] Error 2
+make[1]: *** Waiting for unfinished jobs....
+make: *** [Makefile:196: __sub-make] Error 2
