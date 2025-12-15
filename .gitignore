@@ -163,3 +163,4 @@ arch/arm/boot/dts/vendor
 
 # Documentation toolchain
 sphinx_*/
+Compile.log
