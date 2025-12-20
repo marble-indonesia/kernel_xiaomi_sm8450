@@ -99,7 +99,6 @@
 #define CORE_IO_PAD_PWR_SWITCH_EN	BIT(15)
 #define CORE_IO_PAD_PWR_SWITCH	BIT(16)
 #define CORE_HC_SELECT_IN_EN	BIT(18)
-#define CORE_HC_SELECT_IN_SDR50	(4 << 19)
 #define CORE_HC_SELECT_IN_HS400	(6 << 19)
 #define CORE_HC_SELECT_IN_MASK	(7 << 19)
 #define CORE_HC_SELECT_IN_SDR50	(4 << 19)
@@ -1231,7 +1230,7 @@ static bool sdhci_msm_is_tuning_needed(struct sdhci_host *host)
 	struct mmc_ios *ios = &host->mmc->ios;
 
 	if (ios->timing == MMC_TIMING_UHS_SDR50 &&
-	    host->flags & SDHCI_SDR50_NEEDS_TUNING)
+			host->flags & SDHCI_SDR50_NEEDS_TUNING)
 		return true;
 
 	/*
@@ -1304,7 +1303,6 @@ static int sdhci_msm_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 	const struct sdhci_msm_offset *msm_offset = msm_host->offset;
-	u32 config;
 
 	if (!sdhci_msm_is_tuning_needed(host)) {
 		msm_host->use_cdr = false;
@@ -1322,10 +1320,10 @@ static int sdhci_msm_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	msm_host->tuning_done = 0;
 
 	if (ios.timing == MMC_TIMING_UHS_SDR50 &&
-	    host->flags & SDHCI_SDR50_NEEDS_TUNING) {
+			host->flags & SDHCI_SDR50_NEEDS_TUNING) {
 		config = readl_relaxed(host->ioaddr + msm_offset->core_vendor_spec);
-		config &= ~CORE_HC_SELECT_IN_MASK;
-		config |= CORE_HC_SELECT_IN_EN | CORE_HC_SELECT_IN_SDR50;
+		config |= CORE_HC_SELECT_IN_EN;
+		config |= CORE_HC_SELECT_IN_SDR50;
 		writel_relaxed(config, host->ioaddr + msm_offset->core_vendor_spec);
 	}
 
@@ -1902,6 +1900,7 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 	u32 val = SWITCHABLE_SIGNALING_VOLTAGE;
 	const struct sdhci_msm_offset *msm_offset =
 					msm_host->offset;
+	struct mmc_host *mmc = host->mmc;
 
 	pr_debug("%s: %s: request %d curr_pwr_state %x curr_io_level %x\n",
 			mmc_hostname(host->mmc), __func__, req_type,
@@ -1963,9 +1962,10 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 
 	}
 
-	if ((req_type & REQ_BUS_ON) && mmc->card && !mmc->ops->get_cd(mmc)) {
-		sdhci_writeb(host, 0, SDHCI_POWER_CONTROL);
+	if (mmc->card && mmc->ops->get_cd && !mmc->ops->get_cd(mmc) &&
+			(req_type & REQ_BUS_ON)) {
 		host->pwr = 0;
+		sdhci_writeb(host, 0, SDHCI_POWER_CONTROL);
 	}
 
 	pr_debug("%s: %s: request %d done\n", mmc_hostname(host->mmc),
@@ -2351,13 +2351,13 @@ static void sdhci_msm_handle_pwr_irq(struct sdhci_host *host, int irq)
 		udelay(10);
 	}
 
-	if ((irq_status & CORE_PWRCTL_BUS_ON) && mmc->card &&
-	    !mmc->ops->get_cd(mmc)) {
-		msm_host_writel(msm_host, CORE_PWRCTL_BUS_FAIL, host,
+	if (mmc->card && mmc->ops->get_cd && !mmc->ops->get_cd(mmc) &&
+		irq_status & CORE_PWRCTL_BUS_ON) {
+		irq_ack = CORE_PWRCTL_BUS_FAIL;
+		msm_host_writel(msm_host, irq_ack, host,
 				msm_offset->core_pwrctl_ctl);
 		return;
 	}
-
 	/* Handle BUS ON/OFF*/
 	if (irq_status & CORE_PWRCTL_BUS_ON) {
 		ret = sdhci_msm_setup_vreg(msm_host, true, false);

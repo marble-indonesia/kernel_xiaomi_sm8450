@@ -452,10 +452,9 @@ int vsock_assign_transport(struct vsock_sock *vsk, struct vsock_sock *psk)
 		return -ESOCKTNOSUPPORT;
 	}
 
-	if (vsk->transport && vsk->transport == new_transport) {
-		ret = 0;
-		goto err;
-	}
+	if (vsk->transport) {
+		if (vsk->transport == new_transport)
+			return 0;
 
 		/* transport->release() must be called with sock lock acquired.
 		 * This path can only be taken during vsock_stream_connect(),
@@ -475,6 +474,12 @@ int vsock_assign_transport(struct vsock_sock *vsk, struct vsock_sock *psk)
 		sk->sk_state = TCP_CLOSE;
 		vsk->peer_shutdown = 0;
 	}
+
+	/* We increase the module refcnt to prevent the transport unloading
+	 * while there are open sockets assigned to it.
+	 */
+	if (!new_transport || !try_module_get(new_transport->module))
+		return -ENODEV;
 
 	ret = new_transport->init(vsk, psk);
 	if (ret) {
