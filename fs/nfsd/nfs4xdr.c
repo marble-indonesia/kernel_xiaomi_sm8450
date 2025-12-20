@@ -565,7 +565,6 @@ nfsd4_decode_access(struct nfsd4_compoundargs *argp, struct nfsd4_access *access
 
 static __be32 nfsd4_decode_cb_sec(struct nfsd4_compoundargs *argp, struct nfsd4_cb_sec *cbs)
 {
-<<<<<<< HEAD
 	__be32 status;
 
 	status = nfsd4_decode_clientid4(argp, clientid);
@@ -1748,6 +1747,7 @@ nfsd4_decode_getdeviceinfo(struct nfsd4_compoundargs *argp,
 	DECODE_HEAD;
 	u32 num, i;
 
+<<<<<<< HEAD
 	READ_BUF(sizeof(struct nfsd4_deviceid) + 3 * 4);
 	COPYMEM(&gdev->gd_devid, sizeof(struct nfsd4_deviceid));
 	gdev->gd_layout_type = be32_to_cpup(p++);
