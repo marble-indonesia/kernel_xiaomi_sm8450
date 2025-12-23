@@ -1,3 +1,5 @@
+arch/arm64/configs/gki_defconfig:767:warning: override: reassigning to symbol MQ_IOSCHED_SSG
+arch/arm64/configs/gki_defconfig:768:warning: override: reassigning to symbol MQ_IOSCHED_SSG_CGROUP
 .config:7820:warning: override: DEFAULT_BBR changes choice state
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
 Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
