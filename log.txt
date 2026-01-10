@@ -1,9 +1,55 @@
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+../fs/proc/task_mmu.c:428:35: error: implicit declaration of function 'get_pad_vma' [-Werror,-Wimplicit-function-declaration]
+  428 |         struct vm_area_struct *pad_vma = get_pad_vma(v);
+      |                                          ^
+../fs/proc/task_mmu.c:428:35: note: did you mean 'get_gate_vma'?
+../include/linux/mm.h:3201:38: note: 'get_gate_vma' declared here
+ 3201 | static inline struct vm_area_struct *get_gate_vma(struct mm_struct *mm)
+      |                                      ^
+../fs/proc/task_mmu.c:428:25: error: incompatible integer to pointer conversion initializing 'struct vm_area_struct *' with an expression of type 'int' [-Wint-conversion]
+  428 |         struct vm_area_struct *pad_vma = get_pad_vma(v);
+      |                                ^         ~~~~~~~~~~~~~~
+../fs/proc/task_mmu.c:429:31: error: implicit declaration of function 'get_data_vma' [-Werror,-Wimplicit-function-declaration]
+  429 |         struct vm_area_struct *vma = get_data_vma(v);
+      |                                      ^
+../fs/proc/task_mmu.c:429:31: note: did you mean 'get_gate_vma'?
+../include/linux/mm.h:3201:38: note: 'get_gate_vma' declared here
+ 3201 | static inline struct vm_area_struct *get_gate_vma(struct mm_struct *mm)
+      |                                      ^
+../fs/proc/task_mmu.c:429:25: error: incompatible integer to pointer conversion initializing 'struct vm_area_struct *' with an expression of type 'int' [-Wint-conversion]
+  429 |         struct vm_area_struct *vma = get_data_vma(v);
+      |                                ^     ~~~~~~~~~~~~~~~
+../fs/proc/task_mmu.c:434:50: error: too many arguments to function call, expected 4, have 5
+  434 |         show_map_pad_vma(vma, pad_vma, m, show_map_vma, false);
+      |         ~~~~~~~~~~~~~~~~                                ^~~~~
+../include/linux/pgsize_migration.h:29:13: note: 'show_map_pad_vma' declared here
+   29 | extern void show_map_pad_vma(struct vm_area_struct *vma,
+      |             ^                ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   30 |                              struct seq_file *m, void *func, bool smaps);
+      |                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../fs/proc/task_mmu.c:932:35: error: implicit declaration of function 'get_pad_vma' [-Werror,-Wimplicit-function-declaration]
+  932 |         struct vm_area_struct *pad_vma = get_pad_vma(v);
+      |                                          ^
+../fs/proc/task_mmu.c:932:25: error: incompatible integer to pointer conversion initializing 'struct vm_area_struct *' with an expression of type 'int' [-Wint-conversion]
+  932 |         struct vm_area_struct *pad_vma = get_pad_vma(v);
+      |                                ^         ~~~~~~~~~~~~~~
+../fs/proc/task_mmu.c:933:31: error: implicit declaration of function 'get_data_vma' [-Werror,-Wimplicit-function-declaration]
+  933 |         struct vm_area_struct *vma = get_data_vma(v);
+      |                                      ^
+../fs/proc/task_mmu.c:933:25: error: incompatible integer to pointer conversion initializing 'struct vm_area_struct *' with an expression of type 'int' [-Wint-conversion]
+  933 |         struct vm_area_struct *vma = get_data_vma(v);
+      |                                ^     ~~~~~~~~~~~~~~~
+../fs/proc/task_mmu.c:985:47: error: too many arguments to function call, expected 4, have 5
+  985 |         show_map_pad_vma(vma, pad_vma, m, show_smap, true);
+      |         ~~~~~~~~~~~~~~~~                             ^~~~
+../include/linux/pgsize_migration.h:29:13: note: 'show_map_pad_vma' declared here
+   29 | extern void show_map_pad_vma(struct vm_area_struct *vma,
+      |             ^                ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   30 |                              struct seq_file *m, void *func, bool smaps);
+      |                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+10 errors generated.
+make[3]: *** [../scripts/Makefile.build:279: fs/proc/task_mmu.o] Error 1
+make[2]: *** [../scripts/Makefile.build:522: fs/proc] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/home/maul/kernel/kernel_platform/xiaomi/sm8450/Makefile:2045: fs] Error 2
+make[1]: *** Waiting for unfinished jobs....
+make: *** [Makefile:196: __sub-make] Error 2
