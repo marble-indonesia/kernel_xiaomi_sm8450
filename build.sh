@@ -32,15 +32,20 @@ find_aosp_root() {
     return 1
 }
 
-if SRC_ROOT="$(find_aosp_root)"; then
-    echo "AOSP Source Root: $SRC_ROOT"
+if [ -f ".build.rc" ]; then
+    source .build.rc
+    echo "Loaded from .build.rc: SRC_ROOT=$SRC_ROOT"
 else
-    SRC_ROOT="$(realpath "$KP_ROOT/../..")"
-    echo "Using fallback SRC_ROOT: $SRC_ROOT"
+    if SRC_ROOT="$(find_aosp_root)"; then
+        echo "AOSP Source Root: $SRC_ROOT"
+    else
+        SRC_ROOT="$(realpath "$KP_ROOT/../..")"
+        echo "Using fallback SRC_ROOT: $SRC_ROOT"
+    fi
 fi
 
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-r510928"
-PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
+TC_DIR="$SRC_ROOT/prebuilts-master/clang/host/linux-x86/clang-r584948b"
+PREBUILTS_DIR="/home/steambot12/kernel/prebuilts/kernel-build-tools/linux-x86"
 BRANCH="$(git branch --show-current)"
 MODULES_REPO="sm8450-modules"
 DT_REPO="sm8450-devicetrees"
