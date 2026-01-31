@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ../fs/proc/task_mmu.c:428:35: error: implicit declaration of function 'get_pad_vma' [-Werror,-Wimplicit-function-declaration]
   428 |         struct vm_area_struct *pad_vma = get_pad_vma(v);
       |                                          ^
@@ -52,4 +53,31 @@ make[2]: *** [../scripts/Makefile.build:522: fs/proc] Error 2
 make[2]: *** Waiting for unfinished jobs....
 make[1]: *** [/home/maul/kernel/kernel_platform/xiaomi/sm8450/Makefile:2045: fs] Error 2
 make[1]: *** Waiting for unfinished jobs....
+=======
+.config:7859:warning: override: reassigning to symbol KSU_SUSFS
+.config:7861:warning: override: reassigning to symbol KSU_SUSFS_SUS_PATH
+.config:7862:warning: override: reassigning to symbol KSU_SUSFS_SUS_MOUNT
+.config:7865:warning: override: reassigning to symbol KSU_SUSFS_SUS_KSTAT
+.config:7868:warning: override: reassigning to symbol KSU_SUSFS_SPOOF_UNAME
+.config:7869:warning: override: reassigning to symbol KSU_SUSFS_ENABLE_LOG
+.config:7870:warning: override: reassigning to symbol KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+.config:7871:warning: override: reassigning to symbol KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+.config:7872:warning: override: reassigning to symbol KSU_SUSFS_OPEN_REDIRECT
+../drivers/kernelsu/supercalls.c:1018:14: error: use of undeclared identifier 'CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS'
+ 1018 |                 if (cmd == CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS) {
+      |                            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../drivers/kernelsu/supercalls.c:1019:4: error: implicit declaration of function 'susfs_set_hide_sus_mnts_for_non_su_procs' [-Werror,-Wimplicit-function-declaration]
+ 1019 |                         susfs_set_hide_sus_mnts_for_non_su_procs(arg);
+      |                         ^
+../drivers/kernelsu/supercalls.c:1019:4: note: did you mean 'susfs_set_hide_sus_mnts_for_all_procs'?
+../include/linux/susfs.h:173:6: note: 'susfs_set_hide_sus_mnts_for_all_procs' declared here
+  173 | void susfs_set_hide_sus_mnts_for_all_procs(void __user **user_info);
+      |      ^
+2 errors generated.
+make[3]: *** [../scripts/Makefile.build:279: drivers/kernelsu/supercalls.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [../scripts/Makefile.build:522: drivers/kernelsu] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[1]: *** [/home/maul/kernel/kernel_platform/xiaomi/sm8450/Makefile:2045: drivers] Error 2
+>>>>>>> a6f7b9b020f2b (twwt)
 make: *** [Makefile:196: __sub-make] Error 2
