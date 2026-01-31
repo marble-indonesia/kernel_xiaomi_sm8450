@@ -45,7 +45,7 @@ else
 fi
 
 TC_DIR="$SRC_ROOT/prebuilts-master/clang/host/linux-x86/clang-r584948b"
-PREBUILTS_DIR="/home/steambot12/kernel/prebuilts/kernel-build-tools/linux-x86"
+PREBUILTS_DIR="$SRC_ROOT/prebuilts/kernel-build-tools/linux-x86"
 BRANCH="$(git branch --show-current)"
 MODULES_REPO="sm8450-modules"
 DT_REPO="sm8450-devicetrees"
