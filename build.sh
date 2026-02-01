@@ -184,6 +184,11 @@ clang --version
 DTC_PATH="$PREBUILTS_DIR/bin/dtc"
 UFDT_PATH="$PREBUILTS_DIR/bin/ufdt_apply_overlay"
 
+if ! command -v python3 &> /dev/null; then
+    echo_e "python3 not found! Install with: sudo apt install python3"
+    exit 1
+fi
+
 if [ ! -f "$DTC_PATH" ]; then
     echo_w "Prebuilt DTC not found at $DTC_PATH"
     if command -v dtc &> /dev/null; then
@@ -240,7 +245,17 @@ build_all() {
 
 build_techpack_modules() {
     echo_i "Building techpack modules..."
+	if [ ! -d "$MODULES_SRC" ]; then
+      echo_w "Module sources not found at $MODULES_SRC"
+      echo_w "Skipping techpack modules..."
+      return 0
+    fi
+
     for module in $MODULES; do
+	if [ ! -d "$MODULES_SRC/$module" ]; then
+        echo_w "Module $module not found, skipping..."
+        continue
+    fi
         echo "Building $module..."
         m -C $MODULES_SRC/$module M=$MODULES_SRC/$module KERNEL_SRC="$(pwd)" OUT_DIR="$(pwd)/out"
         m -C $MODULES_SRC/$module M=$MODULES_SRC/$module KERNEL_SRC="$(pwd)" OUT_DIR="$(pwd)/out" \
@@ -268,11 +283,11 @@ process_dtbs() {
 
     rm -f out/arch/arm64/boot/dts/vendor/qcom/*.dtbo
 
-    if [ -f "../../build/android/merge_dtbs.py" ]; then
-        ../../build/android/merge_dtbs.py out/dtbs-base out/arch/arm64/boot/dts/vendor/qcom/ out/dtbs 2> >(tee -a "$LOG_FILE") || exit $?
+    if [ -f "$SRC_ROOT/build/android/merge_dtbs.py" ]; then
+        python3 "$SRC_ROOT/build/android/merge_dtbs.py" out/dtbs-base out/arch/arm64/boot/dts/vendor/qcom/ out/dtbs 2> >(tee -a "$LOG_FILE") || exit $?
     else
-        echo_w "merge_dtbs.py not found, copying DTBs directly..."
-        cp out/dtbs-base/*.dtb out/dtbs/ 2>/dev/null || true
+		echo_w "merge_dtbs.py not found at $SRC_ROOT/build/android/merge_dtbs.py"
+        echo_w "Copying DTBs directly..."
         cp out/arch/arm64/boot/dts/vendor/qcom/*.dtb out/dtbs/ 2>/dev/null || true
     fi
 
@@ -339,8 +354,8 @@ install_modules() {
         cp $modules_out/modules.{alias,dep,softdep} $dest_dir 2>/dev/null || true
     done
 
-    [ -f "$VBOOT_DIR/modules.dep" ] && sed -E -i 's|([^: ]*/)([^/]*\.ko)([:]?)([ ]|$)|/lib/modules/\2\3\4|g' "$VBOOT_DIR/modules.dep"
-    [ -f "$VDLKM_DIR/modules.dep" ] && sed -E -i 's|([^: ]*/)([^/]*\.ko)([:]?)([ ]|$)|/vendor_dlkm/lib/modules/\2\3\4|g' "$VDLKM_DIR/modules.dep"
+    [ -f "$VBOOT_DIR/modules.dep" ] && sed -E -i 's#([^: ]*/)([^/]*\.ko)([:]?)([ ]|$)#/lib/modules/\2\3\4#g' "$VBOOT_DIR/modules.dep"
+    [ -f "$VDLKM_DIR/modules.dep" ] && sed -E -i 's#([^: ]*/)([^/]*\.ko)([:]?)([ ]|$)#/vendor_dlkm/lib/modules/\2\3\4#g' "$VDLKM_DIR/modules.dep"
 
     echo_s "Modules installation completed"
 }
