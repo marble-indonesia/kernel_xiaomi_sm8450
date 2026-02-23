@@ -521,7 +521,6 @@ out:
 		return count;
 	}
 
-<<<<<<< HEAD
 #ifdef CONFIG_F2FS_FS_COMPRESSION
 	if (!strcmp(a->attr.name, "compr_written_block") ||
 		!strcmp(a->attr.name, "compr_saved_block")) {
@@ -597,9 +596,7 @@ out:
 	}
 
 	*ui = (unsigned int)t;
-=======
 	__sbi_store_value(a, sbi, ptr + a->offset, t);
->>>>>>> google0/linux-5.10.y
 
 	return count;
 }
