@@ -315,284 +315,42 @@ static ssize_t f2fs_sbi_show(struct f2fs_attr *a,
 		return len;
 	}
 
-	return __sbi_show_value(a, sbi, buf, ptr + a->offset);
-}
-
-static void __sbi_store_value(struct f2fs_attr *a,
-			struct f2fs_sb_info *sbi,
-			unsigned char *ui, unsigned long value)
-{
-	switch (a->size) {
-	case 1:
-		*(u8 *)ui = value;
-		break;
-	case 2:
-		*(u16 *)ui = value;
-		break;
-	case 4:
-		*(u32 *)ui = value;
-		break;
-	case 8:
-		*(u64 *)ui = value;
-		break;
-	default:
-		f2fs_bug_on(sbi, 1);
-		f2fs_err(sbi, "store sysfs node value with wrong type");
-	}
-}
-
-static ssize_t __sbi_store(struct f2fs_attr *a,
-			struct f2fs_sb_info *sbi,
-			const char *buf, size_t count)
-{
-	unsigned char *ptr;
-	unsigned long t;
-	unsigned int *ui;
-	ssize_t ret;
-
-	ptr = __struct_ptr(sbi, a->struct_type);
-	if (!ptr)
-		return -EINVAL;
-
-	if (!strcmp(a->attr.name, "extension_list")) {
-		const char *name = strim((char *)buf);
-		bool set = true, hot;
-
-		if (!strncmp(name, "[h]", 3))
-			hot = true;
-		else if (!strncmp(name, "[c]", 3))
-			hot = false;
-		else
-			return -EINVAL;
-
-		name += 3;
-
-		if (*name == '!') {
-			name++;
-			set = false;
-		}
-
-		if (strlen(name) >= F2FS_EXTENSION_LEN)
-			return -EINVAL;
-
-		f2fs_down_write(&sbi->sb_lock);
-
-		ret = f2fs_update_extension_list(sbi, name, hot, set);
-		if (ret)
-			goto out;
-
-		ret = f2fs_commit_super(sbi, false);
-		if (ret)
-			f2fs_update_extension_list(sbi, name, hot, !set);
-out:
-		f2fs_up_write(&sbi->sb_lock);
-		return ret ? ret : count;
-	}
-
+<<<<<<< HEAD
+=======
 	if (!strcmp(a->attr.name, "ckpt_thread_ioprio")) {
-		const char *name = strim((char *)buf);
 		struct ckpt_req_control *cprc = &sbi->cprc_info;
-		int class;
-		long data;
-		int ret;
+		int len = 0;
+		int class = IOPRIO_PRIO_CLASS(cprc->ckpt_thread_ioprio);
+		int data = IOPRIO_PRIO_DATA(cprc->ckpt_thread_ioprio);
 
-		if (!strncmp(name, "rt,", 3))
-			class = IOPRIO_CLASS_RT;
-		else if (!strncmp(name, "be,", 3))
-			class = IOPRIO_CLASS_BE;
+		if (class == IOPRIO_CLASS_RT)
+			len += scnprintf(buf + len, PAGE_SIZE - len, "rt,");
+		else if (class == IOPRIO_CLASS_BE)
+			len += scnprintf(buf + len, PAGE_SIZE - len, "be,");
 		else
 			return -EINVAL;
 
-		name += 3;
-		ret = kstrtol(name, 10, &data);
-		if (ret)
-			return ret;
-		if (data >= IOPRIO_BE_NR || data < 0)
-			return -EINVAL;
-
-		cprc->ckpt_thread_ioprio = IOPRIO_PRIO_VALUE(class, data);
-		if (test_opt(sbi, MERGE_CHECKPOINT)) {
-			ret = set_task_ioprio(cprc->f2fs_issue_ckpt,
-					cprc->ckpt_thread_ioprio);
-			if (ret)
-				return ret;
-		}
-
-		return count;
-	}
-
-	ui = (unsigned int *)(ptr + a->offset);
-
-	ret = kstrtoul(skip_spaces(buf), 0, &t);
-	if (ret < 0)
-		return ret;
-#ifdef CONFIG_F2FS_FAULT_INJECTION
-	if (a->struct_type == FAULT_INFO_TYPE && t >= (1 << FAULT_MAX))
-		return -EINVAL;
-	if (a->struct_type == FAULT_INFO_RATE && t >= UINT_MAX)
-		return -EINVAL;
-#endif
-	if (a->struct_type == RESERVED_BLOCKS) {
-		spin_lock(&sbi->stat_lock);
-		if (t > (unsigned long)(sbi->user_block_count -
-				F2FS_OPTION(sbi).root_reserved_blocks -
-				sbi->blocks_per_seg *
-				SM_I(sbi)->additional_reserved_segments)) {
-			spin_unlock(&sbi->stat_lock);
-			return -EINVAL;
-		}
-		*ui = t;
-		sbi->current_reserved_blocks = min(sbi->reserved_blocks,
-				sbi->user_block_count - valid_user_blocks(sbi));
-		spin_unlock(&sbi->stat_lock);
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "discard_granularity")) {
-		if (t == 0 || t > MAX_PLIST_NUM)
-			return -EINVAL;
-		if (t == *ui)
-			return count;
-		*ui = t;
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "migration_granularity")) {
-		if (t == 0 || t > sbi->segs_per_sec)
-			return -EINVAL;
-	}
-
-	if (!strcmp(a->attr.name, "trim_sections"))
-		return -EINVAL;
-
-	if (!strcmp(a->attr.name, "gc_urgent")) {
-		if (t == 0) {
-			sbi->gc_mode = GC_NORMAL;
-		} else if (t == 1) {
-			sbi->gc_mode = GC_URGENT_HIGH;
-			if (sbi->gc_thread) {
-				sbi->gc_thread->gc_wake = 1;
-				wake_up_interruptible_all(
-					&sbi->gc_thread->gc_wait_queue_head);
-				wake_up_discard_thread(sbi, true);
-			}
-		} else if (t == 2) {
-			sbi->gc_mode = GC_URGENT_LOW;
-		} else if (t == 3) {
-			sbi->gc_mode = GC_URGENT_MID;
-			if (sbi->gc_thread) {
-				sbi->gc_thread->gc_wake = 1;
-				wake_up_interruptible_all(
-					&sbi->gc_thread->gc_wait_queue_head);
-			}
-		} else {
-			return -EINVAL;
-		}
-		return count;
-	}
-	if (!strcmp(a->attr.name, "gc_idle")) {
-		if (t == GC_IDLE_CB) {
-			sbi->gc_mode = GC_IDLE_CB;
-		} else if (t == GC_IDLE_GREEDY) {
-			sbi->gc_mode = GC_IDLE_GREEDY;
-		} else if (t == GC_IDLE_AT) {
-			if (!sbi->am.atgc_enabled)
-				return -EINVAL;
-			sbi->gc_mode = GC_IDLE_AT;
-		} else {
-			sbi->gc_mode = GC_NORMAL;
-		}
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "iostat_enable")) {
-		sbi->iostat_enable = !!t;
-		if (!sbi->iostat_enable)
-			f2fs_reset_iostat(sbi);
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "iostat_period_ms")) {
-		if (t < MIN_IOSTAT_PERIOD_MS || t > MAX_IOSTAT_PERIOD_MS)
-			return -EINVAL;
-		spin_lock_irq(&sbi->iostat_lock);
-		sbi->iostat_period_ms = (unsigned int)t;
-		spin_unlock_irq(&sbi->iostat_lock);
-		return count;
+		len += scnprintf(buf + len, PAGE_SIZE - len, "%d\n", data);
+		return len;
 	}
 
 #ifdef CONFIG_F2FS_FS_COMPRESSION
-	if (!strcmp(a->attr.name, "compr_written_block") ||
-		!strcmp(a->attr.name, "compr_saved_block")) {
-		if (t != 0)
-			return -EINVAL;
-		sbi->compr_written_block = 0;
-		sbi->compr_saved_block = 0;
-		return count;
-	}
+	if (!strcmp(a->attr.name, "compr_written_block"))
+		return sysfs_emit(buf, "%llu\n", sbi->compr_written_block);
 
-	if (!strcmp(a->attr.name, "compr_new_inode")) {
-		if (t != 0)
-			return -EINVAL;
-		sbi->compr_new_inode = 0;
-		return count;
-	}
+	if (!strcmp(a->attr.name, "compr_saved_block"))
+		return sysfs_emit(buf, "%llu\n", sbi->compr_saved_block);
+
+	if (!strcmp(a->attr.name, "compr_new_inode"))
+		return sysfs_emit(buf, "%u\n", sbi->compr_new_inode);
 #endif
 
-	if (!strcmp(a->attr.name, "atgc_candidate_ratio")) {
-		if (t > 100)
-			return -EINVAL;
-		sbi->am.candidate_ratio = t;
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "atgc_age_weight")) {
-		if (t > 100)
-			return -EINVAL;
-		sbi->am.age_weight = t;
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "gc_segment_mode")) {
-		if (t < MAX_GC_MODE)
-			sbi->gc_segment_mode = t;
-		else
-			return -EINVAL;
-		return count;
-	}
+	if (!strcmp(a->attr.name, "gc_segment_mode"))
+		return sysfs_emit(buf, "%u\n", sbi->gc_segment_mode);
 
 	if (!strcmp(a->attr.name, "gc_reclaimed_segments")) {
-		if (t != 0)
-			return -EINVAL;
-		sbi->gc_reclaimed_segs[sbi->gc_segment_mode] = 0;
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "hot_data_age_threshold")) {
-		if (t == 0 || t >= sbi->warm_data_age_threshold)
-			return -EINVAL;
-		if (t == *ui)
-			return count;
-		*ui = (unsigned int)t;
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "warm_data_age_threshold")) {
-		if (t == 0 || t <= sbi->hot_data_age_threshold)
-			return -EINVAL;
-		if (t == *ui)
-			return count;
-		*ui = (unsigned int)t;
-		return count;
-	}
-
-	if (!strcmp(a->attr.name, "last_age_weight")) {
-		if (t > 100)
-			return -EINVAL;
-		if (t == *ui)
-			return count;
-		*ui = (unsigned int)t;
-		return count;
+		return sysfs_emit(buf, "%u\n",
+			sbi->gc_reclaimed_segs[sbi->gc_segment_mode]);
 	}
 
 	*ui = (unsigned int)t;
