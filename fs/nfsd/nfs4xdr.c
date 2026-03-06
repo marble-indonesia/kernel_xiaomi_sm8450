@@ -565,163 +565,12 @@ nfsd4_decode_access(struct nfsd4_compoundargs *argp, struct nfsd4_access *access
 
 static __be32 nfsd4_decode_cb_sec(struct nfsd4_compoundargs *argp, struct nfsd4_cb_sec *cbs)
 {
-	__be32 status;
-
-	status = nfsd4_decode_clientid4(argp, clientid);
-	if (status)
-		return status;
-	return nfsd4_decode_opaque(argp, owner);
-}
-
-#ifdef CONFIG_NFSD_PNFS
-
-static __be32
-nfsd4_decode_layoutupdate4(struct nfsd4_compoundargs *argp,
-			   struct nfsd4_layoutcommit *lcp)
-{
-	if (xdr_stream_decode_u32(argp->xdr, &lcp->lc_layout_type) < 0)
-		return nfserr_bad_xdr;
-	if (lcp->lc_layout_type < LAYOUT_NFSV4_1_FILES)
-		return nfserr_bad_xdr;
-	if (lcp->lc_layout_type >= LAYOUT_TYPE_MAX)
-		return nfserr_bad_xdr;
-
-	if (xdr_stream_decode_u32(argp->xdr, &lcp->lc_up_len) < 0)
-		return nfserr_bad_xdr;
-	if (lcp->lc_up_len > 0) {
-		lcp->lc_up_layout = xdr_inline_decode(argp->xdr, lcp->lc_up_len);
-		if (!lcp->lc_up_layout)
-			return nfserr_bad_xdr;
-	}
-
-	return nfs_ok;
-}
-
-static __be32
-nfsd4_decode_layoutreturn4(struct nfsd4_compoundargs *argp,
-			   struct nfsd4_layoutreturn *lrp)
-{
-	__be32 status;
-
-	if (xdr_stream_decode_u32(argp->xdr, &lrp->lr_return_type) < 0)
-		return nfserr_bad_xdr;
-	switch (lrp->lr_return_type) {
-	case RETURN_FILE:
-		if (xdr_stream_decode_u64(argp->xdr, &lrp->lr_seg.offset) < 0)
-			return nfserr_bad_xdr;
-		if (xdr_stream_decode_u64(argp->xdr, &lrp->lr_seg.length) < 0)
-			return nfserr_bad_xdr;
-		status = nfsd4_decode_stateid4(argp, &lrp->lr_sid);
-		if (status)
-			return status;
-		if (xdr_stream_decode_u32(argp->xdr, &lrp->lrf_body_len) < 0)
-			return nfserr_bad_xdr;
-		if (lrp->lrf_body_len > 0) {
-			lrp->lrf_body = xdr_inline_decode(argp->xdr, lrp->lrf_body_len);
-			if (!lrp->lrf_body)
-				return nfserr_bad_xdr;
-		}
-		break;
-	case RETURN_FSID:
-	case RETURN_ALL:
-		lrp->lr_seg.offset = 0;
-		lrp->lr_seg.length = NFS4_MAX_UINT64;
-		break;
-	default:
-		return nfserr_bad_xdr;
-	}
-
-	return nfs_ok;
-}
-
-#endif /* CONFIG_NFSD_PNFS */
-
-static __be32
-nfsd4_decode_sessionid4(struct nfsd4_compoundargs *argp,
-			struct nfs4_sessionid *sessionid)
-{
-	__be32 *p;
-
-	p = xdr_inline_decode(argp->xdr, NFS4_MAX_SESSIONID_LEN);
-	if (!p)
-		return nfserr_bad_xdr;
-	memcpy(sessionid->data, p, sizeof(sessionid->data));
-	return nfs_ok;
-}
-
-/* Defined in Appendix A of RFC 5531 */
-static __be32
-nfsd4_decode_authsys_parms(struct nfsd4_compoundargs *argp,
-			   struct nfsd4_cb_sec *cbs)
-{
-	u32 stamp, gidcount, uid, gid;
-	__be32 *p, status;
-
-	if (xdr_stream_decode_u32(argp->xdr, &stamp) < 0)
-		return nfserr_bad_xdr;
-	/* machine name */
-	status = nfsd4_decode_ignored_string(argp, 255);
-	if (status)
-		return status;
-	if (xdr_stream_decode_u32(argp->xdr, &uid) < 0)
-		return nfserr_bad_xdr;
-	if (xdr_stream_decode_u32(argp->xdr, &gid) < 0)
-		return nfserr_bad_xdr;
-	if (xdr_stream_decode_u32(argp->xdr, &gidcount) < 0)
-		return nfserr_bad_xdr;
-	if (gidcount > 16)
-		return nfserr_bad_xdr;
-	p = xdr_inline_decode(argp->xdr, gidcount << 2);
-	if (!p)
-		return nfserr_bad_xdr;
-	if (cbs->flavor == (u32)(-1)) {
-		struct user_namespace *userns = nfsd_user_namespace(argp->rqstp);
-
-		kuid_t kuid = make_kuid(userns, uid);
-		kgid_t kgid = make_kgid(userns, gid);
-		if (uid_valid(kuid) && gid_valid(kgid)) {
-			cbs->uid = kuid;
-			cbs->gid = kgid;
-			cbs->flavor = RPC_AUTH_UNIX;
-		} else {
-			dprintk("RPC_AUTH_UNIX with invalid uid or gid, ignoring!\n");
-		}
-	}
-
-	return nfs_ok;
-}
-
-static __be32
-nfsd4_decode_gss_cb_handles4(struct nfsd4_compoundargs *argp,
-			     struct nfsd4_cb_sec *cbs)
-{
-	__be32 status;
-	u32 service;
-
-	dprintk("RPC_AUTH_GSS callback secflavor not supported!\n");
-
-	if (xdr_stream_decode_u32(argp->xdr, &service) < 0)
-		return nfserr_bad_xdr;
-	if (service < RPC_GSS_SVC_NONE || service > RPC_GSS_SVC_PRIVACY)
-		return nfserr_bad_xdr;
-	/* gcbp_handle_from_server */
-	status = nfsd4_decode_ignored_string(argp, 0);
-	if (status)
-		return status;
-	/* gcbp_handle_from_client */
-	status = nfsd4_decode_ignored_string(argp, 0);
-	if (status)
-		return status;
-
-	return nfs_ok;
-}
-
-/* a counted array of callback_sec_parms4 items */
-static __be32
-nfsd4_decode_cb_sec(struct nfsd4_compoundargs *argp, struct nfsd4_cb_sec *cbs)
-{
-	u32 i, secflavor, nr_secflavs;
-	__be32 status;
+	DECODE_HEAD;
+	struct user_namespace *userns = nfsd_user_namespace(argp->rqstp);
+	u32 dummy, uid, gid;
+	char *machine_name;
+	int i;
+	int nr_secflavs;
 
 	/* callback_sec_params4 */
 	READ_BUF(4);
@@ -1747,7 +1596,6 @@ nfsd4_decode_getdeviceinfo(struct nfsd4_compoundargs *argp,
 	DECODE_HEAD;
 	u32 num, i;
 
-<<<<<<< HEAD
 	READ_BUF(sizeof(struct nfsd4_deviceid) + 3 * 4);
 	COPYMEM(&gdev->gd_devid, sizeof(struct nfsd4_deviceid));
 	gdev->gd_layout_type = be32_to_cpup(p++);
@@ -5477,6 +5325,22 @@ nfs4svc_decode_compoundargs(struct svc_rqst *rqstp, __be32 *p)
 	args->to_free = NULL;
 	args->ops = args->iops;
 	args->rqstp = rqstp;
+
+	/*
+	 * NFSv4 operation decoders can invoke svc cache lookups
+	 * that trigger svc_defer() when RQ_USEDEFERRAL is set,
+	 * setting RQ_DROPME. This creates two problems:
+	 *
+	 * 1. Non-idempotency: Compounds make it too hard to avoid
+	 *    problems if a request is deferred and replayed.
+	 *
+	 * 2. Session slot leakage (NFSv4.1+): If RQ_DROPME is set
+	 *    during decode but SEQUENCE executes successfully, the
+	 *    session slot will be marked INUSE. The request is then
+	 *    dropped before encoding, so the slot is never released,
+	 *    rendering it permanently unusable by the client.
+	 */
+	clear_bit(RQ_USEDEFERRAL, &rqstp->rq_flags);
 
 	return !nfsd4_decode_compound(args);
 }
