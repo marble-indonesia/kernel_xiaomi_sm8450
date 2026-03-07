@@ -178,8 +178,8 @@ struct mmc_host_ops {
 	int	(*multi_io_quirk)(struct mmc_card *card,
 				  unsigned int direction, int blk_size);
 
-	/* Initialize an SD express card, mandatory for MMC_CAP2_SD_EXP. */
-	int	(*init_sd_express)(struct mmc_host *host, struct mmc_ios *ios);
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 struct mmc_cqe_ops {
@@ -321,7 +321,7 @@ struct mmc_host {
 
 	u32			caps;		/* Host capabilities */
 
-#define MMC_CAP_4_BIT_DATA	(1 yy<< 0)	/* Can the host do 4 bit transfers */
+#define MMC_CAP_4_BIT_DATA	(1 << 0)	/* Can the host do 4 bit transfers */
 #define MMC_CAP_MMC_HIGHSPEED	(1 << 1)	/* Can do MMC high-speed timing */
 #define MMC_CAP_SD_HIGHSPEED	(1 << 2)	/* Can do SD high-speed timing */
 #define MMC_CAP_SDIO_IRQ	(1 << 3)	/* Can signal pending SDIO IRQs */

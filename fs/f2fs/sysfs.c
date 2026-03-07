@@ -221,6 +221,22 @@ static ssize_t encoding_flags_show(struct f2fs_attr *a,
 		le16_to_cpu(F2FS_RAW_SUPER(sbi)->s_encoding_flags));
 }
 
+static ssize_t effective_lookup_mode_show(struct f2fs_attr *a,
+		struct f2fs_sb_info *sbi, char *buf)
+{
+	switch (f2fs_get_lookup_mode(sbi)) {
+	case LOOKUP_PERF:
+		return sysfs_emit(buf, "perf\n");
+	case LOOKUP_COMPAT:
+		return sysfs_emit(buf, "compat\n");
+	case LOOKUP_AUTO:
+		if (sb_no_casefold_compat_fallback(sbi->sb))
+			return sysfs_emit(buf, "auto:perf\n");
+		return sysfs_emit(buf, "auto:compat\n");
+	}
+	return 0;
+}
+
 static ssize_t mounted_time_sec_show(struct f2fs_attr *a,
 		struct f2fs_sb_info *sbi, char *buf)
 {
@@ -315,8 +331,6 @@ static ssize_t f2fs_sbi_show(struct f2fs_attr *a,
 		return len;
 	}
 
-<<<<<<< HEAD
-=======
 	if (!strcmp(a->attr.name, "ckpt_thread_ioprio")) {
 		struct ckpt_req_control *cprc = &sbi->cprc_info;
 		int len = 0;
@@ -353,8 +367,190 @@ static ssize_t f2fs_sbi_show(struct f2fs_attr *a,
 			sbi->gc_reclaimed_segs[sbi->gc_segment_mode]);
 	}
 
+	return __sbi_show_value(a, sbi, buf, ptr + a->offset);
+}
+
+static ssize_t __sbi_store(struct f2fs_attr *a,
+			struct f2fs_sb_info *sbi,
+			const char *buf, size_t count)
+{
+	unsigned char *ptr;
+	unsigned long t;
+	unsigned int *ui;
+	ssize_t ret;
+
+	ptr = __struct_ptr(sbi, a->struct_type);
+	if (!ptr)
+		return -EINVAL;
+
+	if (!strcmp(a->attr.name, "extension_list")) {
+		const char *name = strim((char *)buf);
+		bool set = true, hot;
+
+		if (!strncmp(name, "[h]", 3))
+			hot = true;
+		else if (!strncmp(name, "[c]", 3))
+			hot = false;
+		else
+			return -EINVAL;
+
+		name += 3;
+
+		if (*name == '!') {
+			name++;
+			set = false;
+		}
+
+		if (strlen(name) >= F2FS_EXTENSION_LEN)
+			return -EINVAL;
+
+		f2fs_down_write(&sbi->sb_lock);
+
+		ret = f2fs_update_extension_list(sbi, name, hot, set);
+		if (ret)
+			goto out;
+
+		ret = f2fs_commit_super(sbi, false);
+		if (ret)
+			f2fs_update_extension_list(sbi, name, hot, !set);
+out:
+		f2fs_up_write(&sbi->sb_lock);
+		return ret ? ret : count;
+	}
+
+	if (!strcmp(a->attr.name, "ckpt_thread_ioprio")) {
+		const char *name = strim((char *)buf);
+		struct ckpt_req_control *cprc = &sbi->cprc_info;
+		int class;
+		long data;
+		int ret;
+
+		if (!strncmp(name, "rt,", 3))
+			class = IOPRIO_CLASS_RT;
+		else if (!strncmp(name, "be,", 3))
+			class = IOPRIO_CLASS_BE;
+		else
+			return -EINVAL;
+
+		name += 3;
+		ret = kstrtol(name, 10, &data);
+		if (ret)
+			return ret;
+		if (data >= IOPRIO_BE_NR || data < 0)
+			return -EINVAL;
+
+		cprc->ckpt_thread_ioprio = IOPRIO_PRIO_VALUE(class, data);
+		if (test_opt(sbi, MERGE_CHECKPOINT)) {
+			ret = set_task_ioprio(cprc->f2fs_issue_ckpt,
+					cprc->ckpt_thread_ioprio);
+			if (ret)
+				return ret;
+		}
+
+		return count;
+	}
+
+	ui = (unsigned int *)(ptr + a->offset);
+
+	ret = kstrtoul(skip_spaces(buf), 0, &t);
+	if (ret < 0)
+		return ret;
+#ifdef CONFIG_F2FS_FAULT_INJECTION
+	if (a->struct_type == FAULT_INFO_TYPE && t >= (1 << FAULT_MAX))
+		return -EINVAL;
+	if (a->struct_type == FAULT_INFO_RATE && t >= UINT_MAX)
+		return -EINVAL;
+#endif
+	if (a->struct_type == RESERVED_BLOCKS) {
+		spin_lock(&sbi->stat_lock);
+		if (t > (unsigned long)(sbi->user_block_count -
+				F2FS_OPTION(sbi).root_reserved_blocks -
+				sbi->blocks_per_seg *
+				SM_I(sbi)->additional_reserved_segments)) {
+			spin_unlock(&sbi->stat_lock);
+			return -EINVAL;
+		}
+		*ui = t;
+		sbi->current_reserved_blocks = min(sbi->reserved_blocks,
+				sbi->user_block_count - valid_user_blocks(sbi));
+		spin_unlock(&sbi->stat_lock);
+		return count;
+	}
+
+	if (!strcmp(a->attr.name, "discard_granularity")) {
+		if (t == 0 || t > MAX_PLIST_NUM)
+			return -EINVAL;
+		if (t == *ui)
+			return count;
+		*ui = t;
+		return count;
+	}
+
+	if (!strcmp(a->attr.name, "migration_granularity")) {
+		if (t == 0 || t > sbi->segs_per_sec)
+			return -EINVAL;
+	}
+
+	if (!strcmp(a->attr.name, "trim_sections"))
+		return -EINVAL;
+
+	if (!strcmp(a->attr.name, "gc_urgent")) {
+		if (t == 0) {
+			sbi->gc_mode = GC_NORMAL;
+		} else if (t == 1) {
+			sbi->gc_mode = GC_URGENT_HIGH;
+			if (sbi->gc_thread) {
+				sbi->gc_thread->gc_wake = 1;
+				wake_up_interruptible_all(
+					&sbi->gc_thread->gc_wait_queue_head);
+				wake_up_discard_thread(sbi, true);
+			}
+		} else if (t == 2) {
+			sbi->gc_mode = GC_URGENT_LOW;
+		} else if (t == 3) {
+			sbi->gc_mode = GC_URGENT_MID;
+			if (sbi->gc_thread) {
+				sbi->gc_thread->gc_wake = 1;
+				wake_up_interruptible_all(
+					&sbi->gc_thread->gc_wait_queue_head);
+			}
+		} else {
+			return -EINVAL;
+		}
+		return count;
+	}
+	if (!strcmp(a->attr.name, "gc_idle")) {
+		if (t == GC_IDLE_CB) {
+			sbi->gc_mode = GC_IDLE_CB;
+		} else if (t == GC_IDLE_GREEDY) {
+			sbi->gc_mode = GC_IDLE_GREEDY;
+		} else if (t == GC_IDLE_AT) {
+			if (!sbi->am.atgc_enabled)
+				return -EINVAL;
+			sbi->gc_mode = GC_IDLE_AT;
+		} else {
+			sbi->gc_mode = GC_NORMAL;
+		}
+		return count;
+	}
+
+	if (!strcmp(a->attr.name, "iostat_enable")) {
+		sbi->iostat_enable = !!t;
+		if (!sbi->iostat_enable)
+			f2fs_reset_iostat(sbi);
+		return count;
+	}
+
+	if (!strcmp(a->attr.name, "iostat_period_ms")) {
+		if (t < MIN_IOSTAT_PERIOD_MS || t > MAX_IOSTAT_PERIOD_MS)
+			return -EINVAL;
+		spin_lock_irq(&sbi->iostat_lock);
+		sbi->iostat_period_ms = (unsigned int)t;
+		spin_unlock_irq(&sbi->iostat_lock);
+		return count;
+	}
+
 	*ui = (unsigned int)t;
-	__sbi_store_value(a, sbi, ptr + a->offset, t);
 
 	return count;
 }
@@ -531,6 +727,7 @@ F2FS_GENERAL_RO_ATTR(current_reserved_blocks);
 F2FS_GENERAL_RO_ATTR(unusable);
 F2FS_GENERAL_RO_ATTR(encoding);
 F2FS_GENERAL_RO_ATTR(encoding_flags);
+F2FS_GENERAL_RO_ATTR(effective_lookup_mode);
 F2FS_GENERAL_RO_ATTR(mounted_time_sec);
 F2FS_GENERAL_RO_ATTR(main_blkaddr);
 F2FS_GENERAL_RO_ATTR(pending_discard);
@@ -649,6 +846,7 @@ static struct attribute *f2fs_attrs[] = {
 	ATTR_LIST(current_reserved_blocks),
 	ATTR_LIST(encoding),
 	ATTR_LIST(encoding_flags),
+	ATTR_LIST(effective_lookup_mode),
 	ATTR_LIST(mounted_time_sec),
 #ifdef CONFIG_F2FS_STAT_FS
 	ATTR_LIST(cp_foreground_calls),
