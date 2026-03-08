@@ -44,6 +44,7 @@
 #include <linux/swapops.h>
 #include <linux/swap_cgroup.h>
 #include <trace/hooks/mm.h>
+#include <trace/hooks/bl_hib.h>
 
 static bool swap_count_continued(struct swap_info_struct *, pgoff_t,
 				 unsigned char);
@@ -2616,6 +2617,7 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 	int err, found = 0;
 	unsigned int old_block_size;
 	bool skip = false;
+	bool hibernation_swap = false;
 
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
@@ -2707,11 +2709,14 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
 
 	flush_work(&p->discard_work);
 
+	trace_android_vh_check_hibernation_swap(p->bdev, &hibernation_swap);
+
 	destroy_swap_extents(p);
 	if (p->flags & SWP_CONTINUED)
 		free_swap_count_continuations(p);
 
-	if (!p->bdev || !blk_queue_nonrot(bdev_get_queue(p->bdev)))
+	if (!p->bdev || hibernation_swap ||
+		!blk_queue_nonrot(bdev_get_queue(p->bdev)))
 		atomic_dec(&nr_rotate_swap);
 
 	mutex_lock(&swapon_mutex);
@@ -3229,6 +3234,7 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 	struct page *page = NULL;
 	struct inode *inode = NULL;
 	bool inced_nr_rotate_swap = false;
+	bool hibernation_swap = false;
 
 	if (swap_flags & ~SWAP_FLAGS_VALID)
 		return -EINVAL;
@@ -3299,13 +3305,16 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 		goto bad_swap_unlock_inode;
 	}
 
+	trace_android_vh_check_hibernation_swap(p->bdev, &hibernation_swap);
+
 	if (p->bdev && blk_queue_stable_writes(p->bdev->bd_disk->queue))
 		p->flags |= SWP_STABLE_WRITES;
 
 	if (p->bdev && p->bdev->bd_disk->fops->rw_page)
 		p->flags |= SWP_SYNCHRONOUS_IO;
 
-	if (p->bdev && blk_queue_nonrot(bdev_get_queue(p->bdev))) {
+	if (p->bdev && !hibernation_swap &&
+			blk_queue_nonrot(bdev_get_queue(p->bdev))) {
 		int cpu;
 		unsigned long ci, nr_cluster;
 
