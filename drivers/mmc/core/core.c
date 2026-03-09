@@ -58,7 +58,7 @@ static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
  * performance cost, and for other reasons may not always be desired.
  * So we allow it it to be disabled.
  */
-bool use_spi_crc = 1;
+bool use_spi_crc = 0;
 module_param(use_spi_crc, bool, 0);
 
 static int mmc_schedule_delayed_work(struct delayed_work *work,
@@ -1003,8 +1003,7 @@ void mmc_set_initial_state(struct mmc_host *host)
 
 	mmc_set_ios(host);
 
-	if (!host->ops->dont_reprogram_allkeys)
-		mmc_crypto_set_initial_state(host);
+	mmc_crypto_set_initial_state(host);
 }
 EXPORT_SYMBOL_GPL(mmc_set_initial_state);
 
