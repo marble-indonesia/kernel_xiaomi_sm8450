@@ -1,19 +1,10 @@
 .config:7819:warning: override: DEFAULT_BBR changes choice state
-Traceback (most recent call last):
-  File "/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/../../build/android/merge_dtbs.py", line 454, in <module>
-    main()
-  File "/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/../../build/android/merge_dtbs.py", line 421, in main
-    merged_devicetrees = list(map(lambda dt: MergedDeviceTree(dt), bases))
-  File "/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/../../build/android/merge_dtbs.py", line 408, in parse_dt_files
-    yield DeviceTree(filepath)
-  File "/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/../../build/android/merge_dtbs.py", line 233, in __init__
-    msm_id = split_array(self.get_prop('/', 'qcom,msm-id', check_output=False), 2)
-  File "/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/../../build/android/merge_dtbs.py", line 245, in get_prop
-    r = subprocess.run(["fdtget", "-t", prop_type, self.filename, node, property],
-  File "/usr/lib/python3.10/subprocess.py", line 503, in run
-    with Popen(*popenargs, **kwargs) as process:
-  File "/usr/lib/python3.10/subprocess.py", line 971, in __init__
-    self._execute_child(args, executable, preexec_fn, close_fds,
-  File "/usr/lib/python3.10/subprocess.py", line 1863, in _execute_child
-    raise child_exception_type(errno_num, err_msg, err_filename)
-FileNotFoundError: [Errno 2] No such file or directory: 'fdtget'
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
