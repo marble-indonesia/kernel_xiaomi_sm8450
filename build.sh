@@ -9,7 +9,7 @@ LOG_FILE="log.txt"
 
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/gki-18"
+TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/greenforce-clang"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
 DO_CLEAN=false
 NO_LTO=false
@@ -128,7 +128,7 @@ echo -e "Generating config...\n"
 mkdir -p out
 m $DEFCONFIG
 m ./scripts/kconfig/merge_config.sh $DEFCONFIGS vendor/${TARGET}_GKI.config
-scripts/config --file out/.config --set-str LOCALVERSION "-VestiaZeta-LTO-Edition.01"
+scripts/config --file out/.config --set-str LOCALVERSION "-VestiaZeta-EOL.Edition"
 
 if $NO_LTO; then
     scripts/config --file out/.config -d LTO_CLANG_FULL -e LTO_NONE --set-str LOCALVERSION "-Zetta.Ocen-Kernel-NoLTO"
