@@ -1,4 +1,10 @@
-scripts/Kconfig.include:40: linker 'ld.lld' not found
-make[2]: *** [../scripts/kconfig/Makefile:88: gki_defconfig] Error 1
-make[1]: *** [/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/Makefile:630: gki_defconfig] Error 2
-make: *** [Makefile:196: __sub-make] Error 2
+.config:7817:warning: override: DEFAULT_BBR changes choice state
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
