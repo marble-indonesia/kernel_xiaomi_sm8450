@@ -1041,6 +1041,9 @@ else
 CC_FLAGS_LTO	+= -fvisibility=default
 endif
 
+# Limit inlining across translation units to reduce binary size
+KBUILD_LDFLAGS += -mllvm -import-instr-limit=5
+
 # Set O3 optimization level for LTO
 KBUILD_LDFLAGS		+= --plugin-opt=O3
 KBUILD_LDFLAGS      += --lto-O3
