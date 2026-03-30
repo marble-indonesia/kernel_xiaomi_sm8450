@@ -3,13 +3,111 @@
 # Compile script for Xiaomi 8450 kernel, dts and modules with AOSPA
 # Copyright (C) 2024 Adithya R.
 
+# Check and install libxml2 if missing
+check_libxml2() {
+    echo "=== Checking libxml2 dependencies ==="
+    
+    # Check for libxml2.so.16 specifically (the version needed)
+    if ! ldconfig -p | grep -q "libxml2.so.16"; then
+        echo "- libxml2.so.16 not found!"
+        
+        # Try with sudo first
+        if sudo -n true 2>/dev/null; then
+            echo "Attempting to install libxml2 via package manager..."
+            
+            if [ -f /etc/os-release ]; then
+                . /etc/os-release
+                echo "Detected OS: $NAME ($ID)"
+                
+                case "$ID" in
+                    ubuntu|debian|linuxmint|pop)
+                        sudo apt update && sudo apt install -y libxml2
+                        ;;
+                    arch|manjaro|endeavouros)
+                        sudo pacman -S --noconfirm libxml2
+                        ;;
+                    fedora|rhel|centos)
+                        sudo dnf install -y libxml2
+                        ;;
+                    opensuse*|sles)
+                        sudo zypper install -y libxml2
+                        ;;
+                esac
+            fi
+        else
+            echo "No sudo access detected"
+        fi
+        
+        # Check again after install attempt
+        if ! ldconfig -p | grep -q "libxml2.so.16"; then
+            echo "Installing libxml2.so locally (no sudo required)..."
+            
+            LOCAL_LIB_DIR="$HOME/.local/lib"
+            mkdir -p "$LOCAL_LIB_DIR"
+            
+            # Clean up any old/broken symlinks first
+            rm -f "$LOCAL_LIB_DIR"/libxml2.so* 2>/dev/null
+            
+            # First, try to find existing libxml2 on system
+            SYSTEM_LIBXML=$(find /lib /usr/lib -name "libxml2.so.2*" -type f 2>/dev/null | head -1)
+            
+            if [ -n "$SYSTEM_LIBXML" ]; then
+                echo "Found system libxml2: $SYSTEM_LIBXML"
+                cp "$SYSTEM_LIBXML" "$LOCAL_LIB_DIR/"
+                LIBXML_BASE=$(basename "$SYSTEM_LIBXML")
+                cd "$LOCAL_LIB_DIR"
+                ln -sf "$LIBXML_BASE" libxml2.so.2
+                ln -sf "$LIBXML_BASE" libxml2.so
+                ln -sf "$LIBXML_BASE" libxml2.so.16
+                cd - > /dev/null
+                echo "Copied and linked libxml2"
+            else
+                echo "No system libxml2 found"
+                echo ""
+                echo "=========================================="
+                echo "MANUAL INSTALLATION REQUIRED"
+                echo "=========================================="
+                echo "Please ask server admin to run:"
+                echo "  sudo apt install libxml2"
+                echo ""
+                echo "Or if you have access to another machine:"
+                echo "1. Copy libxml2.so.2 from /lib/x86_64-linux-gnu/"
+                echo "2. Upload to $LOCAL_LIB_DIR/"
+                echo "3. Run: ln -s $LOCAL_LIB_DIR/libxml2.so.2 $LOCAL_LIB_DIR/libxml2.so.16"
+                echo "=========================================="
+                exit 1
+            fi
+            
+            export LD_LIBRARY_PATH="$LOCAL_LIB_DIR:$LD_LIBRARY_PATH"
+            echo "Set LD_LIBRARY_PATH=$LOCAL_LIB_DIR"
+            
+            # Verify
+            if [ -f "$LOCAL_LIB_DIR/libxml2.so.16" ]; then
+                echo "libxml2 ready at $LOCAL_LIB_DIR"
+                ls -lh "$LOCAL_LIB_DIR"/libxml2.so*
+            else
+                echo "Failed to setup libxml2"
+                exit 1
+            fi
+        else
+            echo "libxml2.so.16 found"
+        fi
+    else
+        echo "libxml2.so.16 found"
+    fi
+    echo "==================================="
+    echo ""
+}
+
+check_libxml2
+
 SECONDS=0
 LOG_FILE="log.txt"
 > "$LOG_FILE"
 
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/clang-zyc"
+TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/XClang-21-ThinLTO"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
 DO_CLEAN=false
 NO_LTO=false
@@ -95,19 +193,19 @@ case "$TARGET" in
 esac
 
 export PATH="$TC_DIR/bin:$PREBUILTS_DIR/bin:$PATH"
-export CC=clang
-export CXX=clang++
-export HOSTCC=clang
-export HOSTCXX=clang++
-export LD=ld.lld
-export AR=llvm-ar
-export NM=llvm-nm
-export OBJCOPY=llvm-objcopy
-export OBJDUMP=llvm-objdump
-export STRIP=llvm-strip
+export CC="$TC_DIR/bin/clang"
+export CXX="$TC_DIR/bin/clang++"
+export HOSTCC="$TC_DIR/bin/clang"
+export HOSTCXX="$TC_DIR/bin/clang++"
+export LD="$TC_DIR/bin/ld.lld"
+export AR="$TC_DIR/bin/llvm-ar"
+export NM="$TC_DIR/bin/llvm-nm"
+export OBJCOPY="$TC_DIR/bin/llvm-objcopy"
+export OBJDUMP="$TC_DIR/bin/llvm-objdump"
+export STRIP="$TC_DIR/bin/llvm-strip"
 
-echo "Using clang: $(which clang)"
-clang --version
+echo "Using clang: $CC"
+$CC --version
 
 
 function m() {
