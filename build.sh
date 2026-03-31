@@ -226,7 +226,7 @@ echo -e "Generating config...\n"
 mkdir -p out
 m $DEFCONFIG
 m ./scripts/kconfig/merge_config.sh $DEFCONFIGS vendor/${TARGET}_GKI.config
-scripts/config --file out/.config --set-str LOCALVERSION "-Zetta-Resistancy-EOL"
+scripts/config --file out/.config --set-str LOCALVERSION "-Zetta-Resistancy"
 
 if $NO_LTO; then
     scripts/config --file out/.config -d LTO_CLANG_FULL -e LTO_NONE --set-str LOCALVERSION "-Zetta.Ocen-Kernel-NoLTO"
