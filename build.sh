@@ -107,7 +107,7 @@ LOG_FILE="log.txt"
 
 KP_ROOT="$(realpath ../..)"
 SRC_ROOT="$HOME/pa"
-TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/XClang-21-ThinLTO"
+TC_DIR="$KP_ROOT/prebuilts-master/clang/host/linux-x86/XClang-22.1.2-Polly"
 PREBUILTS_DIR="$KP_ROOT/prebuilts/kernel-build-tools/linux-x86"
 DO_CLEAN=false
 NO_LTO=false
