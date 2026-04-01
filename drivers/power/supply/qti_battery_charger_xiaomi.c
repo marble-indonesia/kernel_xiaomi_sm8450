@@ -81,6 +81,7 @@ static const char *const qc_power_supply_wls_type_text[] = { "Unknown", "BPP",
 /* Bypass charging state variables - kernel-side implementation */
 static int bypass_charging_enabled = 0;
 static int bypass_thermal_level_percent = 89;
+static int smart_charging_enabled = 0;
 static int smart_charging_limit = 80;
 
 static int write_ss_auth_prop_id(struct battery_chg_dev *bcdev,
