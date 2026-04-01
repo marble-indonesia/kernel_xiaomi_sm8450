@@ -1256,7 +1256,7 @@ static int __battery_psy_set_charge_current(struct battery_chg_dev *bcdev,
 	return rc;
 }
 
-static int battery_psy_set_charge_current(struct battery_chg_dev *bcdev,
+int battery_psy_set_charge_current(struct battery_chg_dev *bcdev,
 					int val)
 {
 	int rc;
