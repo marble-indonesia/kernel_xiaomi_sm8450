@@ -28,8 +28,6 @@ extern int usb_psy_get_prop(struct power_supply *psy,
 extern const char *get_usb_type_name(u32 usb_type);
 extern int get_property_id(struct psy_state *pst,
 			   enum power_supply_property prop);
-extern int battery_psy_set_charge_current(struct battery_chg_dev *bcdev,
-					  int val);
 extern int wls_psy_get_prop(struct power_supply *psy,
 			    enum power_supply_property prop,
 			    union power_supply_propval *pval);
@@ -82,7 +80,7 @@ static const char *const qc_power_supply_wls_type_text[] = { "Unknown", "BPP",
 
 /* Bypass charging state variables - kernel-side implementation */
 static int bypass_charging_enabled = 0;
-static int smart_charging_enabled = 0;
+static int bypass_thermal_level_percent = 89;
 static int smart_charging_limit = 80;
 
 static int write_ss_auth_prop_id(struct battery_chg_dev *bcdev,
@@ -2001,15 +1999,6 @@ static ssize_t input_suspend_show(struct class *c, struct class_attribute *attr,
 }
 static CLASS_ATTR_RW(input_suspend);
 
-/**
- * bypass_charging_enable_store - Enable/disable bypass charging mode
- *
- * Bypass charging limits input current to 50mA, allowing device to run
- * directly from charger power without charging battery significantly.
- * This reduces heat and battery wear during extended use while charging.
- *
- * @val: 0 = disable (normal charging), 1 = enable (bypass mode)
- */
 static ssize_t bypass_charging_enable_show(struct class *c,
 					   struct class_attribute *attr,
 					   char *buf)
@@ -2025,44 +2014,70 @@ static ssize_t bypass_charging_enable_store(struct class *c,
 		container_of(c, struct battery_chg_dev, battery_class);
 	int rc;
 	int val;
+	int thermal_level;
 
 	if (kstrtoint(buf, 10, &val))
 		return -EINVAL;
 
-	bypass_charging_enabled = val;
+	val = !!val;
 
 	if (val) {
-		/* Enable bypass: Use thermal mitigation to limit charging to minimum
-		 * Set thermal level to max to trigger minimum charging current
-		 */
-		if (bcdev->num_thermal_levels > 0) {
-			rc = battery_psy_set_charge_current(bcdev, bcdev->num_thermal_levels - 1);
-			if (rc < 0) {
-				pr_err("Failed to set thermal level for bypass: %d\n", rc);
-				bypass_charging_enabled = 0;
-				return rc;
-			}
-			pr_info("Bypass charging enabled (thermal level = %d, minimal current)\n",
-				bcdev->num_thermal_levels - 1);
-		} else {
-			pr_err("Thermal levels not configured, cannot enable bypass\n");
-			bypass_charging_enabled = 0;
-			return -EINVAL;
-		}
-	} else {
-		/* Disable bypass: Restore normal charging (thermal level 0) */
-		rc = battery_psy_set_charge_current(bcdev, 0);
+		thermal_level = (bcdev->num_thermal_levels * bypass_thermal_level_percent) / 100;
+		if (thermal_level >= bcdev->num_thermal_levels)
+			thermal_level = bcdev->num_thermal_levels - 1;
+		
+		rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+				       BATT_CHG_CTRL_LIM, thermal_level);
 		if (rc < 0) {
-			pr_err("Failed to restore normal charging: %d\n", rc);
+			pr_err("bypass: set thermal level %d failed rc=%d\n", thermal_level, rc);
 			return rc;
 		}
-		pr_info("Bypass charging disabled (thermal level = 0, normal charging)\n");
+		pr_info("bypass charging enabled (thermal level = %d/%d, %d%%)\n",
+			thermal_level, bcdev->num_thermal_levels, bypass_thermal_level_percent);
+	} else {
+		rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+				       BATT_CHG_CTRL_LIM, 0);
+		if (rc < 0) {
+			pr_err("bypass: restore normal charging failed rc=%d\n", rc);
+			return rc;
+		}
+		pr_info("bypass charging disabled (normal charging)\n");
 	}
+
+	bypass_charging_enabled = val;
 
 	return count;
 }
 
 static CLASS_ATTR_RW(bypass_charging_enable);
+
+static ssize_t bypass_charging_level_show(struct class *c,
+					  struct class_attribute *attr,
+					  char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bypass_thermal_level_percent);
+}
+
+static ssize_t bypass_charging_level_store(struct class *c,
+					   struct class_attribute *attr,
+					   const char *buf, size_t count)
+{
+	int val;
+
+	if (kstrtoint(buf, 10, &val))
+		return -EINVAL;
+
+	/* Limit between 50-100% (50% = moderate throttle, 100% = maximum throttle) */
+	if (val < 50 || val > 100)
+		return -EINVAL;
+
+	bypass_thermal_level_percent = val;
+	pr_info("Bypass charging level set to %d%% (will apply on next enable)\n", val);
+
+	return count;
+}
+
+static CLASS_ATTR_RW(bypass_charging_level);
 
 static ssize_t smart_charging_enable_show(struct class *c,
 					  struct class_attribute *attr,
@@ -5311,6 +5326,7 @@ static struct attribute *xiaomi_battery_class_attrs[] = {
 	&class_attr_cc_orientation.attr,
 	&class_attr_input_suspend.attr,
 	&class_attr_bypass_charging_enable.attr,
+	&class_attr_bypass_charging_level.attr,
 	&class_attr_smart_charging_enable.attr,
 	&class_attr_smart_charging_limit.attr,
 	&class_attr_fastchg_mode.attr,
