@@ -871,7 +871,7 @@ static int __ip6_tnl_rcv(struct ip6_tnl *tunnel, struct sk_buff *skb,
 
 	/* Save offset of outer header relative to skb->head,
 	 * because we are going to reset the network header to the inner header
-	 * and might change skb->head.
+	 * and skb_vlan_inet_prepare() might change skb->head.
 	 */
 	nh = skb_network_header(skb) - skb->head;
 
@@ -885,6 +885,7 @@ static int __ip6_tnl_rcv(struct ip6_tnl *tunnel, struct sk_buff *skb,
 
 	/* Get the outer header. */
 	ipv6h = (struct ipv6hdr *)(skb->head + nh);
+
 	memset(skb->cb, 0, sizeof(struct inet6_skb_parm));
 
 	__skb_tunnel_rx(skb, tunnel->dev, tunnel->net);

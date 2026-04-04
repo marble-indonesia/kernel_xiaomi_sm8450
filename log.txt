@@ -1,10 +1,14 @@
-.config:7824:warning: override: DEFAULT_BBR changes choice state
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
-Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+arch/arm64/configs/gki_defconfig:92:warning: override: reassigning to symbol QCOM_SYSMON
+arch/arm64/configs/gki_defconfig:93:warning: override: reassigning to symbol QCOM_Q6V5_COMMON
+arch/arm64/configs/gki_defconfig:94:warning: override: reassigning to symbol QCOM_RPROC_COMMON
+arch/arm64/configs/gki_defconfig:782:warning: override: reassigning to symbol SUSPEND_SKIP_SYNC
+.config:7823:warning: override: DEFAULT_BBR changes choice state
+ERROR: modpost: "qcom_sysmon_get_reason" [drivers/remoteproc/qcom_esoc.ko] undefined!
+ERROR: modpost: "qcom_sysmon_shutdown_acked" [drivers/remoteproc/qcom_esoc.ko] undefined!
+ERROR: modpost: "qcom_sysmon_get_txn_id" [drivers/remoteproc/qcom_q6v5_pas.ko] undefined!
+ERROR: modpost: "qcom_q6v5_request_stop" [drivers/remoteproc/qcom_q6v5_pas.ko] undefined!
+ERROR: modpost: "qcom_sysmon_register_ssr_subdev" [drivers/remoteproc/qcom_q6v5_pas.ko] undefined!
+make[2]: *** [../scripts/Makefile.modpost:168: modules-only.symvers] Error 1
+make[2]: *** Deleting file 'modules-only.symvers'
+make[1]: *** [/home/maul/kernel_platform/kernel_platform/xiaomi/sm8450/Makefile:1974: modules] Error 2
+make: *** [Makefile:196: __sub-make] Error 2

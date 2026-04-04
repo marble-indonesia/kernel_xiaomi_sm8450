@@ -415,36 +415,6 @@ static irqreturn_t q6v5_stop_interrupt(int irq, void *data)
 }
 
 /**
- * qcom_q6v5_request_stop() - request the remote processor to stop
- * @q6v5:	reference to qcom_q6v5 context
- * @sysmon:	reference to the remote's sysmon instance, or NULL
- *
- * Return: 0 on success, negative errno on failure
- */
-int qcom_q6v5_request_stop(struct qcom_q6v5 *q6v5, struct qcom_sysmon *sysmon)
-{
-	int ret;
-
-	q6v5->running = false;
-
-	/* Don't perform SMP2P dance if sysmon already shut
-	 * down the remote or if it isn't running
-	 */
-	if (q6v5->rproc->state != RPROC_RUNNING || qcom_sysmon_shutdown_acked(sysmon))
-		return 0;
-
-	qcom_smem_state_update_bits(q6v5->state,
-				    BIT(q6v5->stop_bit), BIT(q6v5->stop_bit));
-
-	ret = wait_for_completion_timeout(&q6v5->stop_done, 5 * HZ);
-
-	qcom_smem_state_update_bits(q6v5->state, BIT(q6v5->stop_bit), 0);
-
-	return ret == 0 ? -ETIMEDOUT : 0;
-}
-EXPORT_SYMBOL_GPL(qcom_q6v5_request_stop);
-
-/**
  * qcom_q6v5_panic() - panic handler to invoke a stop on the remote
  * @q6v5:	reference to qcom_q6v5 context
  *
