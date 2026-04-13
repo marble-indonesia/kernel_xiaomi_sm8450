@@ -2,37 +2,12 @@
 .config:7857:warning: override: reassigning to symbol MI_THERMAL_INTERFACE
 .config:7858:warning: override: reassigning to symbol MI_THERMAL_MULTI_CHARGE
 .config:7859:warning: override: reassigning to symbol HAVE_CHARGE_TEMP
-../fs/f2fs/sysfs.c:354:3: error: use of undeclared identifier 'ui'
-  354 |         *ui = (unsigned int)t;
-      |          ^~
-../fs/f2fs/sysfs.c:354:22: error: use of undeclared identifier 't'
-  354 |         *ui = (unsigned int)t;
-      |                             ^
-../fs/f2fs/sysfs.c:355:2: error: implicit declaration of function '__sbi_store_value' [-Werror,-Wimplicit-function-declaration]
-  355 |         __sbi_store_value(a, sbi, ptr + a->offset, t);
-      |         ^
-../fs/f2fs/sysfs.c:355:2: note: did you mean '__sbi_show_value'?
-../fs/f2fs/sysfs.c:268:16: note: '__sbi_show_value' declared here
-  268 | static ssize_t __sbi_show_value(struct f2fs_attr *a,
-      |                ^
-../fs/f2fs/sysfs.c:355:45: error: use of undeclared identifier 't'
-  355 |         __sbi_store_value(a, sbi, ptr + a->offset, t);
-      |                                                    ^
-../fs/f2fs/sysfs.c:357:9: error: use of undeclared identifier 'count'
-  357 |         return count;
-      |                ^~~~~
-../fs/f2fs/sysfs.c:372:8: error: implicit declaration of function '__sbi_store' [-Werror,-Wimplicit-function-declaration]
-  372 |         ret = __sbi_store(a, sbi, buf, count);
-      |               ^
-../fs/f2fs/sysfs.c:372:8: note: did you mean '__xa_store'?
-../include/linux/xarray.h:558:7: note: '__xa_store' declared here
-  558 | void *__xa_store(struct xarray *, unsigned long index, void *entry, gfp_t);
-      |       ^
-6 errors generated.
-make[3]: *** [../scripts/Makefile.build:279: fs/f2fs/sysfs.o] Error 1
-make[3]: *** Waiting for unfinished jobs....
-make[2]: *** [../scripts/Makefile.build:522: fs/f2fs] Error 2
-make[2]: *** Waiting for unfinished jobs....
-make[1]: *** [/serverhive/smgreborn/kernel_marble/kernel_platform/xiaomi/sm8450/Makefile:2045: fs] Error 2
-make[1]: *** Waiting for unfinished jobs....
-make: *** [Makefile:196: __sub-make] Error 2
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo

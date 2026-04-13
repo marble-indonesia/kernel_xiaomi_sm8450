@@ -4796,6 +4796,7 @@ static void sdhci_msm_set_caps(struct sdhci_msm_host *msm_host)
 	msm_host->mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_NEED_RSP_BUSY;
 }
 
+#if IS_ENABLED(CONFIG_HIBERNATION)
 static int sdhci_msm_prepare_hibernation(struct sdhci_msm_host *msm_host)
 {
 	struct mmc_host *mhost = msm_host->mmc;
@@ -4855,6 +4856,9 @@ static int sdhci_msm_post_hibernation(struct sdhci_msm_host *msm_host)
 
 	if (!mhost->card)
 		return ret;
+
+	if (mhost->caps2 & MMC_CAP2_CRYPTO)
+		blk_ksm_reprogram_all_keys(&mhost->ksm);
 
 	mmc_get_card(mhost->card, NULL);
 
@@ -4919,6 +4923,7 @@ static int sdhci_msm_hibernation_notifier(struct notifier_block *notify_block,
 
 	return 0;
 }
+#endif /* End of CONFIG_HIBERNATION */
 
 /* RUMI W/A for SD card */
 static void sdhci_msm_set_rumi_bus_mode(struct sdhci_host *host)
@@ -5204,6 +5209,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	pm_runtime_mark_last_busy(&pdev->dev);
 	pm_runtime_put_autosuspend(&pdev->dev);
 
+#if IS_ENABLED(CONFIG_HIBERNATION)
 	msm_host->sdhci_msm_pm_notifier.notifier_call
 		= sdhci_msm_hibernation_notifier;
 	ret = register_pm_notifier(&msm_host->sdhci_msm_pm_notifier);
@@ -5212,6 +5218,7 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 				__func__, ret);
 		goto pm_runtime_disable;
 	}
+#endif
 
 	return 0;
 
@@ -5249,7 +5256,9 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 	int dead = (readl_relaxed(host->ioaddr + SDHCI_INT_STATUS) ==
 		    0xffffffff);
 
+#if IS_ENABLED(CONFIG_HIBERNATION)
 	unregister_pm_notifier(&msm_host->sdhci_msm_pm_notifier);
+#endif
 
 	sdhci_remove_host(host, dead);
 
