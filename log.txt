@@ -1,5 +1,6 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 .config:7810:warning: override: DEFAULT_BBR changes choice state
 .config:7857:warning: override: reassigning to symbol MI_THERMAL_INTERFACE
 .config:7858:warning: override: reassigning to symbol MI_THERMAL_MULTI_CHARGE
@@ -7,12 +8,15 @@
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
 Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+=======
+>>>>>>> parent of f71629a2b889 (kernelsu)
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
 Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
 Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+<<<<<<< HEAD
 =======
 <<<<<<< HEAD
 =======
@@ -73,3 +77,8 @@ make[1]: *** [/home/maul/kernel/kernel_platform/xiaomi/sm8450/Makefile:2045: fs]
 make[1]: *** Waiting for unfinished jobs....
 make: *** [Makefile:196: __sub-make] Error 2
 >>>>>>> parent of c4058f1012f3 (kernelsu add)
+=======
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+>>>>>>> parent of f71629a2b889 (kernelsu)
