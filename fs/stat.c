@@ -162,6 +162,13 @@ EXPORT_SYMBOL(vfs_getattr);
  *
  * 0 will be returned on success, and a -ve error code if unsuccessful.
  */
+
+
+#ifdef CONFIG_KSU_SUSFS
+extern bool ksu_init_rc_hook __read_mostly;
+extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
+#endif // #ifdef CONFIG_KSU_SUSFS
+
 int vfs_fstat(int fd, struct kstat *stat)
 {
 	struct fd f;
@@ -171,6 +178,11 @@ int vfs_fstat(int fd, struct kstat *stat)
 	if (!f.file)
 		return -EBADF;
 	error = vfs_getattr(&f.file->f_path, stat, STATX_BASIC_STATS, 0);
+#ifdef CONFIG_KSU_SUSFS
+	if (unlikely(ksu_init_rc_hook)) {
+		ksu_handle_vfs_fstat(fd, &stat->size);
+	}
+#endif // #ifdef CONFIG_KSU_SUSFS
 	fdput(f);
 	return error;
 }
