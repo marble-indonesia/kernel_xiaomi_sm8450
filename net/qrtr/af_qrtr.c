@@ -154,8 +154,12 @@ static struct work_struct qrtr_backup_work;
  * @ep: endpoint
  * @ref: reference count for node
  * @nid: node id
- * @qrtr_tx_flow: xarray of qrtr_tx_flow, keyed by node << 32 | port
- * @qrtr_tx_lock: lock for qrtr_tx_flow inserts
+ * @net_id: network cluster identifer
+ * @hello_sent: hello packet sent to endpoint
+ * @hello_rcvd: hello packet received from endpoint
+ * @qrtr_tx_flow: tree with tx counts per flow
+ * @resume_tx: waiters for a resume tx from the remote
+ * @qrtr_tx_lock: lock for qrtr_tx_flow
  * @rx_queue: receive queue
  * @item: list item for broadcast list
  * @kworker: worker thread for recv work
@@ -174,7 +178,8 @@ struct qrtr_node {
 	atomic_t hello_sent;
 	atomic_t hello_rcvd;
 
-	struct xarray qrtr_tx_flow;
+	struct radix_tree_root qrtr_tx_flow;
+	struct wait_queue_head resume_tx;
 	struct mutex qrtr_tx_lock; /* for qrtr_tx_flow */
 
 	struct sk_buff_head rx_queue;
@@ -409,15 +414,14 @@ static void __qrtr_node_release(struct kref *kref)
 	struct qrtr_node *node = container_of(kref, struct qrtr_node, ref);
 	unsigned long flags;
 	void __rcu **slot;
-	unsigned long index;
 
 	spin_lock_irqsave(&qrtr_nodes_lock, flags);
-	/* If the node is a bridge for other nodes, there are possibly
-	 * multiple entries pointing to our released node, delete them all.
-	 */
-	radix_tree_for_each_slot(slot, &qrtr_nodes, &iter, 0) {
-		if (*slot == node)
-			radix_tree_iter_delete(&qrtr_nodes, &iter, slot);
+	if (node->nid != QRTR_EP_NID_AUTO) {
+		radix_tree_for_each_slot(slot, &qrtr_nodes, &iter, 0) {
+			if (node == *slot)
+				radix_tree_iter_delete(&qrtr_nodes, &iter,
+						       slot);
+		}
 	}
 	spin_unlock_irqrestore(&qrtr_nodes_lock, flags);
 
@@ -425,9 +429,25 @@ static void __qrtr_node_release(struct kref *kref)
 	up_write(&qrtr_epts_lock);
 
 	/* Free tx flow counters */
-	xa_for_each(&node->qrtr_tx_flow, index, flow)
+	mutex_lock(&node->qrtr_tx_lock);
+	radix_tree_for_each_slot(slot, &node->qrtr_tx_flow, &iter, 0) {
+		flow = *slot;
+		list_for_each_entry_safe(waiter, temp, &flow->waiters, node) {
+			list_del(&waiter->node);
+			sock_put(waiter->sk);
+			kfree(waiter);
+		}
+		radix_tree_iter_delete(&node->qrtr_tx_flow, &iter, slot);
 		kfree(flow);
-	xa_destroy(&node->qrtr_tx_flow);
+	}
+	mutex_unlock(&node->qrtr_tx_lock);
+
+	wakeup_source_unregister(node->ws);
+	kthread_flush_worker(&node->kworker);
+	kthread_stop(node->task);
+
+	skb_queue_purge(&node->rx_queue);
+	xa_destroy(&node->no_wake_svc);
 	kfree(node);
 }
 
@@ -467,12 +487,16 @@ static void qrtr_tx_resume(struct qrtr_node *node, struct sk_buff *skb)
 	if (le32_to_cpu(pkt.cmd) != QRTR_TYPE_RESUME_TX)
 		return;
 
-	flow = xa_load(&node->qrtr_tx_flow, key);
-	if (flow) {
-		spin_lock(&flow->resume_tx.lock);
-		flow->pending = 0;
-		spin_unlock(&flow->resume_tx.lock);
-		wake_up_interruptible_all(&flow->resume_tx);
+	src.sq_family = AF_QIPCRTR;
+	src.sq_node = le32_to_cpu(pkt.client.node);
+	src.sq_port = le32_to_cpu(pkt.client.port);
+	key = (u64)src.sq_node << 32 | src.sq_port;
+
+	mutex_lock(&node->qrtr_tx_lock);
+	flow = radix_tree_lookup(&node->qrtr_tx_flow, key);
+	if (!flow) {
+		mutex_unlock(&node->qrtr_tx_lock);
+		return;
 	}
 
 	atomic_set(&flow->pending, 0);
@@ -527,13 +551,12 @@ static int qrtr_tx_wait(struct qrtr_node *node, struct sockaddr_qrtr *to,
 	timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
 
 	mutex_lock(&node->qrtr_tx_lock);
-	flow = xa_load(&node->qrtr_tx_flow, key);
+	flow = radix_tree_lookup(&node->qrtr_tx_flow, key);
 	if (!flow) {
 		flow = kzalloc(sizeof(*flow), GFP_KERNEL);
 		if (flow) {
-			init_waitqueue_head(&flow->resume_tx);
-			if (xa_err(xa_store(&node->qrtr_tx_flow, key, flow,
-					    GFP_KERNEL))) {
+			INIT_LIST_HEAD(&flow->waiters);
+			if (radix_tree_insert(&node->qrtr_tx_flow, key, flow)) {
 				kfree(flow);
 				flow = NULL;
 			}
@@ -614,12 +637,11 @@ static void qrtr_tx_flow_failed(struct qrtr_node *node, int dest_node,
 	unsigned long key = (u64)dest_node << 32 | dest_port;
 	struct qrtr_tx_flow *flow;
 
-	flow = xa_load(&node->qrtr_tx_flow, key);
-	if (flow) {
-		spin_lock_irq(&flow->resume_tx.lock);
-		flow->tx_failed = 1;
-		spin_unlock_irq(&flow->resume_tx.lock);
-	}
+	mutex_lock(&node->qrtr_tx_lock);
+	flow = radix_tree_lookup(&node->qrtr_tx_flow, key);
+	if (flow)
+		WRITE_ONCE(flow->tx_failed, 1);
+	mutex_unlock(&node->qrtr_tx_lock);
 }
 
 /* Pass an outgoing packet socket buffer to the endpoint driver. */
@@ -992,20 +1014,18 @@ EXPORT_SYMBOL_GPL(qrtr_endpoint_post);
 /**
  * qrtr_alloc_ctrl_packet() - allocate control packet skb
  * @pkt: reference to qrtr_ctrl_pkt pointer
- * @flags: the type of memory to allocate
  *
  * Returns newly allocated sk_buff, or NULL on failure
  *
  * This function allocates a sk_buff large enough to carry a qrtr_ctrl_pkt and
  * on success returns a reference to the control packet in @pkt.
  */
-static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt,
-					      gfp_t flags)
+static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt)
 {
 	const int pkt_len = sizeof(struct qrtr_ctrl_pkt);
 	struct sk_buff *skb;
 
-	skb = alloc_skb(QRTR_HDR_MAX_SIZE + pkt_len, flags);
+	skb = alloc_skb(QRTR_HDR_MAX_SIZE + pkt_len, GFP_KERNEL);
 	if (!skb)
 		return NULL;
 
@@ -1232,7 +1252,6 @@ int qrtr_endpoint_register(struct qrtr_endpoint *ep, unsigned int net_id,
 		}
 	}
 
-	xa_init(&node->qrtr_tx_flow);
 	mutex_init(&node->qrtr_tx_lock);
 	INIT_RADIX_TREE(&node->qrtr_tx_flow, GFP_KERNEL);
 	init_waitqueue_head(&node->resume_tx);
@@ -1328,11 +1347,8 @@ static void qrtr_fwd_del_proc(struct qrtr_node *src, unsigned int nid)
 void qrtr_endpoint_unregister(struct qrtr_endpoint *ep)
 {
 	struct radix_tree_iter iter;
-	struct qrtr_ctrl_pkt *pkt;
-	struct qrtr_tx_flow *flow;
-	struct sk_buff *skb;
+	struct qrtr_node *node = ep->node;
 	unsigned long flags;
-	unsigned long index;
 	void __rcu **slot;
 
 	mutex_lock(&node->ep_lock);
@@ -1340,25 +1356,25 @@ void qrtr_endpoint_unregister(struct qrtr_endpoint *ep)
 	mutex_unlock(&node->ep_lock);
 
 	/* Notify the local controller about the event */
+	down_read(&qrtr_epts_lock);
 	spin_lock_irqsave(&qrtr_nodes_lock, flags);
 	radix_tree_for_each_slot(slot, &qrtr_nodes, &iter, 0) {
-		if (*slot != node)
+		if (node != *slot)
 			continue;
-		src.sq_node = iter.index;
-		skb = qrtr_alloc_ctrl_packet(&pkt, GFP_ATOMIC);
-		if (skb) {
-			pkt->cmd = cpu_to_le32(QRTR_TYPE_BYE);
-			qrtr_local_enqueue(NULL, skb, QRTR_TYPE_BYE, &src, &dst);
-		}
+
+		spin_unlock_irqrestore(&qrtr_nodes_lock, flags);
+
+		qrtr_notify_bye(iter.index);
+		qrtr_fwd_del_proc(node, iter.index);
+
+		spin_lock_irqsave(&qrtr_nodes_lock, flags);
 	}
 	spin_unlock_irqrestore(&qrtr_nodes_lock, flags);
+	up_read(&qrtr_epts_lock);
 
 	/* Wake up any transmitters waiting for resume-tx from the node */
-	mutex_lock(&node->qrtr_tx_lock);
-	xa_for_each(&node->qrtr_tx_flow, index, flow)
-		wake_up_interruptible_all(&flow->resume_tx);
-	mutex_unlock(&node->qrtr_tx_lock);
-
+	wake_up_interruptible_all(&node->resume_tx);
+	qrtr_log_resume_tx_node_erase(node->nid);
 	qrtr_node_release(node);
 	ep->node = NULL;
 }
@@ -1408,11 +1424,9 @@ static void qrtr_send_del_client(struct qrtr_sock *ipc)
 	to.sq_node = QRTR_NODE_BCAST;
 	to.sq_port = QRTR_PORT_CTRL;
 
-	skb = qrtr_alloc_ctrl_packet(&pkt, GFP_KERNEL);
-	if (skb) {
-		pkt->cmd = cpu_to_le32(QRTR_TYPE_DEL_CLIENT);
-		pkt->client.node = cpu_to_le32(ipc->us.sq_node);
-		pkt->client.port = cpu_to_le32(ipc->us.sq_port);
+	pkt->cmd = cpu_to_le32(QRTR_TYPE_DEL_CLIENT);
+	pkt->client.node = cpu_to_le32(ipc->us.sq_node);
+	pkt->client.port = cpu_to_le32(ipc->us.sq_port);
 
 	qrtr_log_resume_tx(pkt->client.node, pkt->client.port,
 			   RTX_REMOVE_RECORD);
@@ -1808,8 +1822,11 @@ static int qrtr_send_resume_tx(struct qrtr_cb *cb)
 	if (!node)
 		return -EINVAL;
 
-	skb = qrtr_alloc_ctrl_packet(&pkt, GFP_KERNEL);
-	if (!skb)
+	skb = qrtr_alloc_ctrl_packet(&pkt);
+	if (!skb) {
+		qrtr_log_resume_tx(cb->src_node, cb->src_port,
+				   RTX_CTRL_SKB_ALLOC_FAIL);
+		qrtr_node_release(node);
 		return -ENOMEM;
 	}
 
