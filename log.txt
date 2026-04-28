@@ -1,1 +1,21 @@
-Makefile:2190: *** extraneous 'endif'.  Stop.
+arch/arm64/configs/gki_defconfig:121:warning: override: reassigning to symbol PM_WAKELOCKS_GC
+arch/arm64/configs/gki_defconfig:138:warning: override: reassigning to symbol BOEFFLA_WL_BLOCKER
+arch/arm64/configs/gki_defconfig:141:warning: override: reassigning to symbol IDLE_INJECT
+arch/arm64/configs/gki_defconfig:142:warning: override: reassigning to symbol SUSPEND
+arch/arm64/configs/gki_defconfig:143:warning: override: reassigning to symbol SUSPEND_FREEZER
+arch/arm64/configs/gki_defconfig:147:warning: override: reassigning to symbol ARCH_HIBERNATION_POSSIBLE
+arch/arm64/configs/gki_defconfig:148:warning: override: reassigning to symbol ARCH_SUSPEND_POSSIBLE
+arch/arm64/configs/gki_defconfig:797:warning: override: reassigning to symbol SUSPEND_SKIP_SYNC
+.config:7838:warning: override: DEFAULT_BBR changes choice state
+.config:7885:warning: override: reassigning to symbol MI_THERMAL_INTERFACE
+.config:7886:warning: override: reassigning to symbol MI_THERMAL_MULTI_CHARGE
+.config:7887:warning: override: reassigning to symbol HAVE_CHARGE_TEMP
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/marble-audio.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Reloading overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo
+Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/camera/marble-sm7475-camera-sensor.dtbo

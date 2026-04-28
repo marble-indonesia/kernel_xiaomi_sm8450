@@ -24,16 +24,13 @@
 #include "fuse/fuse_i.h"
 #include "mount.h"
 
-DEFINE_STATIC_KEY_FALSE(ksu_init_rc_hook_key_false);
-DEFINE_STATIC_KEY_FALSE(ksu_input_hook_key_false);
-
 extern bool susfs_is_current_ksu_domain(void);
 extern void setup_selinux(const char *domain, struct cred *cred);
 
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
-DEFINE_STATIC_KEY_TRUE(susfs_log_key);
-#define SUSFS_LOGI(fmt, ...) if (static_branch_likely(&susfs_log_key)) pr_info("susfs:[%u][%d][%s] " fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
-#define SUSFS_LOGE(fmt, ...) if (static_branch_likely(&susfs_log_key)) pr_err("susfs:[%u][%d][%s]" fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
+DEFINE_STATIC_KEY_TRUE(susfs_is_log_enabled);
+#define SUSFS_LOGI(fmt, ...) if (static_branch_likely(&susfs_is_log_enabled)) pr_info("susfs:[%u][%d][%s] " fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
+#define SUSFS_LOGE(fmt, ...) if (static_branch_likely(&susfs_is_log_enabled)) pr_err("susfs:[%u][%d][%s]" fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
 #else
 #define SUSFS_LOGI(fmt, ...) 
 #define SUSFS_LOGE(fmt, ...) 
@@ -239,26 +236,26 @@ int susfs_get_data_path(struct path *path) {
 
 /* sus_mount */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-static DEFINE_SPINLOCK(susfs_spin_lock_sus_mount);
-bool susfs_hide_sus_mnts_for_all_procs = true; // hide sus mounts for all processes by default
+// - Default to false now so zygisk can pick up the sus mounts without the need to turn it off manually in post-fs-data stage
+//   otherwise user needs to turn it on in post-fs-data stage and turn it off in boot-completed stage
+bool susfs_hide_sus_mnts_for_non_su_procs = false;
 
-void susfs_set_hide_sus_mnts_for_all_procs(void __user **user_info) {
-	struct st_susfs_hide_sus_mnts_for_all_procs info = {0};
+void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
+	struct st_susfs_hide_sus_mnts_for_non_su_procs info = {0};
 
-	if (copy_from_user(&info, (struct st_susfs_hide_sus_mnts_for_all_procs __user*)*user_info, sizeof(info))) {
+	if (copy_from_user(&info, (struct st_susfs_hide_sus_mnts_for_non_su_procs __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
 		goto out_copy_to_user;
 	}
-	spin_lock(&susfs_spin_lock_sus_mount);
-	susfs_hide_sus_mnts_for_all_procs = info.enabled;
-	spin_unlock(&susfs_spin_lock_sus_mount);
-	SUSFS_LOGI("susfs_hide_sus_mnts_for_all_procs: %d\n", info.enabled);
+	
+	WRITE_ONCE(susfs_hide_sus_mnts_for_non_su_procs, info.enabled);
+	SUSFS_LOGI("susfs_hide_sus_mnts_for_non_su_procs: %d\n", info.enabled);
 	info.err = 0;
 out_copy_to_user:
-	if (copy_to_user(&((struct st_susfs_hide_sus_mnts_for_all_procs __user*)*user_info)->err, &info.err, sizeof(info.err))) {
+	if (copy_to_user(&((struct st_susfs_hide_sus_mnts_for_non_su_procs __user*)*user_info)->err, &info.err, sizeof(info.err))) {
 		info.err = -EFAULT;
 	}
-	SUSFS_LOGI("CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS -> ret: %d\n", info.err);
+	SUSFS_LOGI("CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS -> ret: %d\n", info.err);
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
@@ -609,7 +606,7 @@ out_spoof_kstat:
 /* spoof_uname */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 static struct st_susfs_uname my_uname = {0};
-DEFINE_STATIC_KEY_TRUE(susfs_set_uname_key_true);
+DEFINE_STATIC_KEY_FALSE(susfs_is_uname_spoof_buffer_set);
 static DEFINE_SEQLOCK(susfs_uname_seqlock);
 
 void susfs_set_uname(void __user **user_info) {
@@ -638,8 +635,8 @@ void susfs_set_uname(void __user **user_info) {
 	}
 	write_sequnlock(&susfs_uname_seqlock);
 
-	if (!static_key_enabled(&susfs_set_uname_key_true))
-		static_branch_enable(&susfs_set_uname_key_true);
+	if (!static_key_enabled(&susfs_is_uname_spoof_buffer_set))
+		static_branch_enable(&susfs_is_uname_spoof_buffer_set);
 
 	SUSFS_LOGI("set spoofed release: '%s', version: '%s'\n",
 				my_uname.release, my_uname.version);
@@ -674,10 +671,10 @@ void susfs_enable_log(void __user **user_info) {
 	}
 
 	if (info.enabled) {
-		static_branch_enable(&susfs_log_key);
+		static_branch_enable(&susfs_is_log_enabled);
 		pr_info("susfs: enable logging to kernel");
 	} else {
-		static_branch_disable(&susfs_log_key);
+		static_branch_disable(&susfs_is_log_enabled);
 		pr_info("susfs: disable logging to kernel");
 	}
 
@@ -693,7 +690,7 @@ out_copy_to_user:
 /* spoof_cmdline_or_bootconfig */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 static char *fake_cmdline_or_bootconfig = NULL;
-DEFINE_STATIC_KEY_TRUE(susfs_set_fake_cmdline_or_bootconfig_key_true);
+DEFINE_STATIC_KEY_FALSE(susfs_is_fake_cmdline_or_bootconfig_buffer_set);
 static DEFINE_SEQLOCK(susfs_fake_cmdline_or_bootconfig_seqlock);
 
 void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
@@ -732,10 +729,9 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
 			SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE - 1);
 	write_sequnlock(&susfs_fake_cmdline_or_bootconfig_seqlock);
 
-	if (!static_key_enabled(&susfs_set_fake_cmdline_or_bootconfig_key_true)) {
-		static_branch_enable(&susfs_set_fake_cmdline_or_bootconfig_key_true);
-		SUSFS_LOGI("fake_cmdline_or_bootconfig is set\n");
-	}
+	if (!static_key_enabled(&susfs_is_fake_cmdline_or_bootconfig_buffer_set))
+		static_branch_enable(&susfs_is_fake_cmdline_or_bootconfig_buffer_set);
+	SUSFS_LOGI("fake_cmdline_or_bootconfig is set\n");
 
 	info->err = 0;
 
@@ -1131,7 +1127,7 @@ out_copy_to_user:
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 
 /* susfs avc log spoofing */
-DEFINE_STATIC_KEY_TRUE(susfs_avc_log_spoofing_key_true);
+DEFINE_STATIC_KEY_FALSE(susfs_is_avc_log_spoofing_enabled);
 
 void susfs_set_avc_log_spoofing(void __user **user_info) {
 	struct st_susfs_avc_log_spoofing info = {0};
@@ -1142,10 +1138,10 @@ void susfs_set_avc_log_spoofing(void __user **user_info) {
 	}
 
 	if (info.enabled) {
-		static_branch_enable(&susfs_avc_log_spoofing_key_true);
+		static_branch_enable(&susfs_is_avc_log_spoofing_enabled);
 		SUSFS_LOGI("enabling susfs_avc_log_spoofing\n");
 	} else {
-		static_branch_disable(&susfs_avc_log_spoofing_key_true);
+		static_branch_disable(&susfs_is_avc_log_spoofing_enabled);
 		SUSFS_LOGI("disabling susfs_avc_log_spoofing\n");
 	}
 
@@ -1283,7 +1279,7 @@ out_copy_to_user:
 /* kthread for checking if /sdcard/Android is accessible via fsnoitfy */
 /* code is straightly borrowed from KernelSU's pkg_observer.c */
 #define SDCARD_ANDROID_PATH "/data/media/0/Android"
-DEFINE_STATIC_KEY_FALSE(susfs_set_sdcard_android_data_decrypted_key_false);
+DEFINE_STATIC_KEY_TRUE(susfs_is_sdcard_android_data_not_decrypted);
 
 struct watch_dir {
 	const char *path;
@@ -1309,8 +1305,8 @@ static void susfs_sdcard_cleanup_fn(struct work_struct *work)
 	struct fsnotify_group *grp;
 	struct inode *inode;
 
-	if (static_key_enabled(&susfs_set_sdcard_android_data_decrypted_key_false))
-		static_branch_disable(&susfs_set_sdcard_android_data_decrypted_key_false);
+	if (static_key_enabled(&susfs_is_sdcard_android_data_not_decrypted))
+		static_branch_disable(&susfs_is_sdcard_android_data_not_decrypted);
 	SUSFS_LOGI("/sdcard is decrypted\n");
 	SUSFS_LOGI("cleaning up fsnotify sdcard watch\n");
 
@@ -1445,19 +1441,13 @@ void susfs_start_sdcard_monitor_fn(void) {
 	if (IS_ERR(kthread_run(susfs_sdcard_monitor_fn, NULL, "susfs_sdcard_monitor"))) {
 		SUSFS_LOGE("failed to create thread susfs_sdcard_monitor\n");
 		SUSFS_LOGI("/sdcard is forcibly set decrypted\n");
-		if (static_key_enabled(&susfs_set_sdcard_android_data_decrypted_key_false))
-			static_branch_disable(&susfs_set_sdcard_android_data_decrypted_key_false);
+		if (static_key_enabled(&susfs_is_sdcard_android_data_not_decrypted))
+			static_branch_disable(&susfs_is_sdcard_android_data_not_decrypted);
 	}
 }
 
 /* susfs_init */
 void susfs_init(void) {
-	static_branch_enable(&ksu_init_rc_hook_key_false);
-	static_branch_enable(&ksu_input_hook_key_false);
-	static_branch_enable(&susfs_set_sdcard_android_data_decrypted_key_false);
-	static_branch_disable(&susfs_set_uname_key_true);
-	static_branch_disable(&susfs_avc_log_spoofing_key_true);
-	static_branch_disable(&susfs_set_fake_cmdline_or_bootconfig_key_true);
 	SUSFS_LOGI("susfs is initialized! version: " SUSFS_VERSION " \n");
 }
 

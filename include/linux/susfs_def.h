@@ -14,7 +14,7 @@
 #define CMD_SUSFS_SET_SDCARD_ROOT_PATH 0x55552 /* deprecated */
 #define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560 /* deprecated */
-#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_ALL_PROCS 0x55561
+#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS 0x55561
 #define CMD_SUSFS_UMOUNT_FOR_ZYGOTE_ISO_SERVICE 0x55562 /* deprecated */
 #define CMD_SUSFS_ADD_SUS_KSTAT 0x55570
 #define CMD_SUSFS_UPDATE_SUS_KSTAT 0x55571
@@ -94,15 +94,15 @@ static inline bool susfs_ends_with(const char *str, const char *suffix) {
 }
 
 static inline bool susfs_is_current_proc_umounted(void) {
-	return test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+	return (likely(test_thread_flag(TIF_PROC_UMOUNTED)));
 }
 
 static inline void susfs_set_current_proc_umounted(void) {
-	set_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED);
+	set_thread_flag(TIF_PROC_UMOUNTED);
 }
 
 static inline bool susfs_is_current_proc_umounted_app(void) {
-	return (test_ti_thread_flag(&current->thread_info, TIF_PROC_UMOUNTED) &&
+	return (likely(test_thread_flag(TIF_PROC_UMOUNTED)) &&
 			current_uid().val >= 10000);
 }
 
