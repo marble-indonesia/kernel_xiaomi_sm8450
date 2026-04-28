@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 10
 SUBLEVEL = 253
-EXTRAVERSION = -rc1
+EXTRAVERSION =
 NAME = Dare mighty things
 
 # indicate that change "Kbuild: Support nested composite objects" is
