@@ -1,0 +1,193 @@
+../kernel/sched/rt.c:2162:4: error: 'break' statement not in loop or switch statement
+ 2162 |                         break;
+      |                         ^
+../kernel/sched/rt.c:2167:2: error: expected identifier or '('
+ 2167 |         return -1;
+      |         ^
+../kernel/sched/rt.c:2168:1: error: extraneous closing brace ('}')
+ 2168 | }
+      | ^
+3 errors generated.
+make[3]: *** [../scripts/Makefile.build:279: kernel/sched/rt.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [../scripts/Makefile.build:522: kernel/sched] Error 2
+make[2]: *** Waiting for unfinished jobs....
+../net/ipv6/xfrm6_policy.c:73:47: error: use of undeclared identifier 'params'
+   73 |         err = ipv6_dev_get_saddr(dev_net(dev), dev, &params->daddr->in6, 0,
+      |                                                      ^~~~~~
+1 error generated.
+make[3]: *** [../scripts/Makefile.build:279: net/ipv6/xfrm6_policy.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+make[1]: *** [/home/smgreborn/kernel_marble/xiaomi/sm8450/Makefile:2045: kernel] Error 2
+make[1]: *** Waiting for unfinished jobs....
+../net/qrtr/af_qrtr.c:405:30: error: unused variable 'waiter' [-Werror,-Wunused-variable]
+  405 |         struct qrtr_tx_flow_waiter *waiter;
+      |                                     ^~~~~~
+../net/qrtr/af_qrtr.c:406:30: error: unused variable 'temp' [-Werror,-Wunused-variable]
+  406 |         struct qrtr_tx_flow_waiter *temp;
+      |                                     ^~~~
+../net/qrtr/af_qrtr.c:472:20: error: no member named 'resume_tx' in 'struct qrtr_tx_flow'
+  472 |                 spin_lock(&flow->resume_tx.lock);
+      |                            ~~~~  ^
+../net/qrtr/af_qrtr.c:473:17: error: assigning to 'atomic_t' from incompatible type 'int'
+  473 |                 flow->pending = 0;
+      |                               ^ ~
+../net/qrtr/af_qrtr.c:474:22: error: no member named 'resume_tx' in 'struct qrtr_tx_flow'
+  474 |                 spin_unlock(&flow->resume_tx.lock);
+      |                              ~~~~  ^
+../net/qrtr/af_qrtr.c:475:36: error: no member named 'resume_tx' in 'struct qrtr_tx_flow'
+  475 |                 wake_up_interruptible_all(&flow->resume_tx);
+      |                                            ~~~~  ^
+../net/qrtr/af_qrtr.c:479:35: error: no member named 'resume_tx' in 'struct qrtr_node'
+  479 |         wake_up_interruptible_all(&node->resume_tx);
+      |                                    ~~~~  ^
+../net/qrtr/af_qrtr.c:534:31: error: no member named 'resume_tx' in 'struct qrtr_tx_flow'
+  534 |                         init_waitqueue_head(&flow->resume_tx);
+      |                                              ~~~~  ^
+../net/qrtr/af_qrtr.c:586:48: error: no member named 'resume_tx' in 'struct qrtr_node'
+  586 |                 ret = wait_event_interruptible_timeout(node->resume_tx,
+      |                                                        ~~~~  ^
+../net/qrtr/af_qrtr.c:586:48: error: no member named 'resume_tx' in 'struct qrtr_node'
+  586 |                 ret = wait_event_interruptible_timeout(node->resume_tx,
+      |                                                        ~~~~  ^
+../net/qrtr/af_qrtr.c:619:24: error: no member named 'resume_tx' in 'struct qrtr_tx_flow'
+  619 |                 spin_lock_irq(&flow->resume_tx.lock);
+      |                                ~~~~  ^
+../net/qrtr/af_qrtr.c:621:26: error: no member named 'resume_tx' in 'struct qrtr_tx_flow'
+  621 |                 spin_unlock_irq(&flow->resume_tx.lock);
+      |                                  ~~~~  ^
+../net/qrtr/af_qrtr.c:1002:24: error: conflicting types for 'qrtr_alloc_ctrl_packet'
+ 1002 | static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt,
+      |                        ^
+../net/qrtr/af_qrtr.c:214:24: note: previous declaration is here
+  214 | static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt);
+      |                        ^
+../net/qrtr/af_qrtr.c:1238:29: error: no member named 'resume_tx' in 'struct qrtr_node'
+ 1238 |         init_waitqueue_head(&node->resume_tx);
+      |                              ~~~~  ^
+../net/qrtr/af_qrtr.c:1338:14: error: use of undeclared identifier 'node'
+ 1338 |         mutex_lock(&node->ep_lock);
+      |                     ^~~~
+../net/qrtr/af_qrtr.c:1339:2: error: use of undeclared identifier 'node'
+ 1339 |         node->ep = NULL;
+      |         ^~~~
+../net/qrtr/af_qrtr.c:1340:16: error: use of undeclared identifier 'node'
+ 1340 |         mutex_unlock(&node->ep_lock);
+      |                       ^~~~
+../net/qrtr/af_qrtr.c:1345:16: error: use of undeclared identifier 'node'
+ 1345 |                 if (*slot != node)
+      |                              ^~~~
+../net/qrtr/af_qrtr.c:1347:3: error: use of undeclared identifier 'src'
+ 1347 |                 src.sq_node = iter.index;
+      |                 ^~~
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+make[3]: *** [../scripts/Makefile.build:279: net/qrtr/af_qrtr.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [../scripts/Makefile.build:522: net/ipv6] Error 2
+make[2]: *** Waiting for unfinished jobs....
+make[2]: *** [../scripts/Makefile.build:522: net/qrtr] Error 2
+../drivers/i3c/master.c:2206:3: warning: variable 'i2cdev' is uninitialized when used here [-Wuninitialized]
+ 2206 |                 i2cdev->dev = i2c_new_client_device(adap, &i2cboardinfo->base);
+      |                 ^~~~~~
+../drivers/i3c/master.c:2184:29: note: initialize the variable 'i2cdev' to silence this warning
+ 2184 |         struct i2c_dev_desc *i2cdev;
+      |                                    ^
+      |                                     = NULL
+1 warning generated.
+../drivers/rpmsg/rpmsg_core.c:378:33: error: passing 'char **' to parameter of type 'const char **' discards qualifiers in nested pointer types [-Werror,-Wincompatible-pointer-types-discards-qualifiers]
+  378 |         ret = driver_set_override(dev, &rpdev->driver_override, buf, count);
+      |                                        ^~~~~~~~~~~~~~~~~~~~~~~
+../include/linux/device/driver.h:158:58: note: passing argument to parameter 'override' here
+  158 | int driver_set_override(struct device *dev, const char **override,
+      |                                                          ^
+1 error generated.
+make[3]: *** [../scripts/Makefile.build:279: drivers/rpmsg/rpmsg_core.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [../scripts/Makefile.build:522: drivers/rpmsg] Error 2
+make[2]: *** Waiting for unfinished jobs....
+../drivers/remoteproc/qcom_sysmon.c:227:14: error: offsetof of incomplete type 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                   ^        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../include/linux/stddef.h:17:32: note: expanded from macro 'offsetof'
+   17 | #define offsetof(TYPE, MEMBER)  __compiler_offsetof(TYPE, MEMBER)
+      |                                 ^                   ~~~~
+./../include/linux/compiler_types.h:135:35: note: expanded from macro '__compiler_offsetof'
+  135 | #define __compiler_offsetof(a, b)       __builtin_offsetof(a, b)
+      |                                         ^                  ~
+../drivers/remoteproc/qcom_sysmon.c:227:30: note: forward declaration of 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                                   ^
+../drivers/remoteproc/qcom_sysmon.c:237:14: error: offsetof of incomplete type 'struct ssctl_subsys_event_with_tid_req'
+  237 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                   ^        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../include/linux/stddef.h:17:32: note: expanded from macro 'offsetof'
+   17 | #define offsetof(TYPE, MEMBER)  __compiler_offsetof(TYPE, MEMBER)
+      |                                 ^                   ~~~~
+./../include/linux/compiler_types.h:135:35: note: expanded from macro '__compiler_offsetof'
+  135 | #define __compiler_offsetof(a, b)       __builtin_offsetof(a, b)
+      |                                         ^                  ~
+../drivers/remoteproc/qcom_sysmon.c:227:30: note: forward declaration of 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                                   ^
+../drivers/remoteproc/qcom_sysmon.c:247:14: error: offsetof of incomplete type 'struct ssctl_subsys_event_with_tid_req'
+  247 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                   ^        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../include/linux/stddef.h:17:32: note: expanded from macro 'offsetof'
+   17 | #define offsetof(TYPE, MEMBER)  __compiler_offsetof(TYPE, MEMBER)
+      |                                 ^                   ~~~~
+./../include/linux/compiler_types.h:135:35: note: expanded from macro '__compiler_offsetof'
+  135 | #define __compiler_offsetof(a, b)       __builtin_offsetof(a, b)
+      |                                         ^                  ~
+../drivers/remoteproc/qcom_sysmon.c:227:30: note: forward declaration of 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                                   ^
+../drivers/remoteproc/qcom_sysmon.c:257:14: error: offsetof of incomplete type 'struct ssctl_subsys_event_with_tid_req'
+  257 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                   ^        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../include/linux/stddef.h:17:32: note: expanded from macro 'offsetof'
+   17 | #define offsetof(TYPE, MEMBER)  __compiler_offsetof(TYPE, MEMBER)
+      |                                 ^                   ~~~~
+./../include/linux/compiler_types.h:135:35: note: expanded from macro '__compiler_offsetof'
+  135 | #define __compiler_offsetof(a, b)       __builtin_offsetof(a, b)
+      |                                         ^                  ~
+../drivers/remoteproc/qcom_sysmon.c:227:30: note: forward declaration of 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                                   ^
+../drivers/remoteproc/qcom_sysmon.c:267:14: error: offsetof of incomplete type 'struct ssctl_subsys_event_with_tid_req'
+  267 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                   ^        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../include/linux/stddef.h:17:32: note: expanded from macro 'offsetof'
+   17 | #define offsetof(TYPE, MEMBER)  __compiler_offsetof(TYPE, MEMBER)
+      |                                 ^                   ~~~~
+./../include/linux/compiler_types.h:135:35: note: expanded from macro '__compiler_offsetof'
+  135 | #define __compiler_offsetof(a, b)       __builtin_offsetof(a, b)
+      |                                         ^                  ~
+../drivers/remoteproc/qcom_sysmon.c:227:30: note: forward declaration of 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                                   ^
+../drivers/remoteproc/qcom_sysmon.c:277:14: error: offsetof of incomplete type 'struct ssctl_subsys_event_with_tid_req'
+  277 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                   ^        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../include/linux/stddef.h:17:32: note: expanded from macro 'offsetof'
+   17 | #define offsetof(TYPE, MEMBER)  __compiler_offsetof(TYPE, MEMBER)
+      |                                 ^                   ~~~~
+./../include/linux/compiler_types.h:135:35: note: expanded from macro '__compiler_offsetof'
+  135 | #define __compiler_offsetof(a, b)       __builtin_offsetof(a, b)
+      |                                         ^                  ~
+../drivers/remoteproc/qcom_sysmon.c:227:30: note: forward declaration of 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                                   ^
+../drivers/remoteproc/qcom_sysmon.c:399:41: error: variable has incomplete type 'struct ssctl_subsys_event_with_tid_req'
+  399 |         struct ssctl_subsys_event_with_tid_req req;
+      |                                                ^
+../drivers/remoteproc/qcom_sysmon.c:227:30: note: forward declaration of 'struct ssctl_subsys_event_with_tid_req'
+  227 |                 .offset         = offsetof(struct ssctl_subsys_event_with_tid_req,
+      |                                                   ^
+7 errors generated.
+make[3]: *** [../scripts/Makefile.build:279: drivers/remoteproc/qcom_sysmon.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [../scripts/Makefile.build:522: drivers/remoteproc] Error 2
+make[1]: *** [/home/smgreborn/kernel_marble/xiaomi/sm8450/Makefile:2045: net] Error 2
+make[1]: *** [/home/smgreborn/kernel_marble/xiaomi/sm8450/Makefile:2045: drivers] Error 2
+make: *** [Makefile:196: __sub-make] Error 2

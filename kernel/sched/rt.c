@@ -2146,7 +2146,6 @@ static int rto_next_cpu(struct root_domain *rd)
 
 		if (cpu < nr_cpu_ids)
 			return cpu;
-		}
 
 		rd->rto_cpu = -1;
 
