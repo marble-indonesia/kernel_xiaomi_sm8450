@@ -70,8 +70,7 @@ static int xfrm6_get_saddr(struct net *net, int oif,
 		return -EHOSTUNREACH;
 	}
 	dev = idev->dev;
-	err = ipv6_dev_get_saddr(dev_net(dev), dev, &params->daddr->in6, 0,
-				 &saddr->in6);
+	err = ipv6_dev_get_saddr(dev_net(dev), dev, &daddr->in6, 0, &saddr->in6);
 	dst_release(dst);
 	if (err)
 		return -EHOSTUNREACH;
