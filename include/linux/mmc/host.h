@@ -180,8 +180,14 @@ struct mmc_host_ops {
 	int	(*multi_io_quirk)(struct mmc_card *card,
 				  unsigned int direction, int blk_size);
 
-	/* Initialize an SD express card, mandatory for MMC_CAP2_SD_EXP. */
-	int	(*init_sd_express)(struct mmc_host *host, struct mmc_ios *ios);
+	/*
+	 * Optional callback to support controllers that dont require to
+	 * reprogram all crypto keys on card suspend/resume.
+	 */
+	bool	(*dont_reprogram_allkeys)(void);
+
+	ANDROID_KABI_RESERVE(1);
+	ANDROID_KABI_RESERVE(2);
 };
 
 struct mmc_cqe_ops {
