@@ -1,3 +1,12 @@
+arch/arm64/configs/gki_defconfig:89:warning: override: reassigning to symbol PM_WAKELOCKS_GC
+arch/arm64/configs/gki_defconfig:105:warning: override: reassigning to symbol BOEFFLA_WL_BLOCKER
+arch/arm64/configs/gki_defconfig:107:warning: override: reassigning to symbol IDLE_INJECT
+arch/arm64/configs/gki_defconfig:108:warning: override: reassigning to symbol SUSPEND
+arch/arm64/configs/gki_defconfig:109:warning: override: reassigning to symbol SUSPEND_FREEZER
+arch/arm64/configs/gki_defconfig:113:warning: override: reassigning to symbol ARCH_HIBERNATION_POSSIBLE
+arch/arm64/configs/gki_defconfig:114:warning: override: reassigning to symbol ARCH_SUSPEND_POSSIBLE
+arch/arm64/configs/gki_defconfig:764:warning: override: reassigning to symbol SUSPEND_SKIP_SYNC
+.config:7785:warning: override: DEFAULT_BBR changes choice state
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/marble-sde-display-mtp-overlay.dtbo
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/display/display/cape-sde-display-mtp-overlay.dtbo
 Merging overlay blob out/arch/arm64/boot/dts/vendor/qcom/audio/ukee-audio-mtp.dtbo
