@@ -1276,6 +1276,47 @@ config QTI_OEMVM_CORE_CTL
 	  API for user to migrate vCPU to current pCPU then yield on current
 	  pCPU. User can also recover vCPU mapping after work is done.
 
+config ICNSS2_DEBUG
+        bool "ICNSS2 Platform Driver Debug Support"
+        help
+          This option is to enable ICNSS2 platform driver debug support which
+          primarily includes providing additional verbose logs for certain
+          features, enabling kernel panic for certain cases to aid the
+          debugging, and enabling any other debug mechanisms.
+
+config QCOM_S2D_VENDOR_HOOK
+	tristate "Vendor hook module to route flow of the core Kernel"
+	help
+	  This options enable vendor hook callbacks for bootloader based
+	  hibernation. Callbacks implemented here are called from the
+          core kernel and help to do bootloader hibernation specific job.
+	  Enable this if bootloader hibernation is enabled.
+
+config QCOM_SECURE_HIBERNATION
+	tristate "Add security support to hibernation"
+	help
+	  Secure the hibernation snapshot by encrypting
+	  the snapshot at kernel before saving to disk.
+	  This uses GCM-AES crypto algorithm to encrypt the
+	  pages at the kernel.
+	  If not sure, say N.
+
+config QCOM_HIB_USE_STATIC_KEY
+	tristate "Debug case to generate Key & Test"
+	help
+	  Debug case to generate Key & Test.
+
+config QCOM_HIB_KERNEL_BASED
+	tristate "Enable it to specify its using Kernel based Hibernation exit"
+	help
+	  Enable it to specify its using Kernel based Hibernation exit
+
+config QCOM_KERNEL_SEC_KEY
+	tristate "SOC supports Qcom Secure Kernel Key"
+	help
+	  SOC supports Qcom Secure Kernel Key
+	  If not sure, say N.
+
 source "drivers/soc/qcom/icnss2/Kconfig"
 source "drivers/soc/qcom/sync_fence/Kconfig"
 source "drivers/soc/qcom/tmecom/Kconfig"
