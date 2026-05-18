@@ -763,7 +763,7 @@ struct fwnode_handle *device_get_next_child_node(struct device *dev,
 	struct fwnode_handle *fwnode = NULL, *next;
 
 	if (dev->of_node)
-		fwnode = &dev->of_node->fwnode;
+		fwnode = of_fwnode_handle(dev->of_node);
 	else if (adev)
 		fwnode = acpi_fwnode_handle(adev);
 
@@ -840,6 +840,9 @@ EXPORT_SYMBOL_GPL(fwnode_handle_put);
  */
 bool fwnode_device_is_available(const struct fwnode_handle *fwnode)
 {
+	if (!fwnode_has_op(fwnode, device_is_available))
+		return true;
+
 	return fwnode_call_bool_op(fwnode, device_is_available);
 }
 EXPORT_SYMBOL_GPL(fwnode_device_is_available);
@@ -1001,7 +1004,7 @@ EXPORT_SYMBOL(device_get_mac_address);
  * Returns Linux IRQ number on success. Other values are determined
  * accordingly to acpi_/of_ irq_get() operation.
  */
-int fwnode_irq_get(const struct fwnode_handle *fwnode, unsigned int index)
+int fwnode_irq_get(struct fwnode_handle *fwnode, unsigned int index)
 {
 	struct device_node *of_node = to_of_node(fwnode);
 	struct resource res;
