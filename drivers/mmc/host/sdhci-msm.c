@@ -99,9 +99,9 @@
 #define CORE_IO_PAD_PWR_SWITCH_EN	BIT(15)
 #define CORE_IO_PAD_PWR_SWITCH	BIT(16)
 #define CORE_HC_SELECT_IN_EN	BIT(18)
-#define CORE_HC_SELECT_IN_SDR50	(4 << 19)
 #define CORE_HC_SELECT_IN_HS400	(6 << 19)
 #define CORE_HC_SELECT_IN_MASK	(7 << 19)
+#define CORE_HC_SELECT_IN_SDR50	(4 << 19)
 
 #define CORE_8_BIT_SUPPORT	BIT(18)
 #define CORE_3_0V_SUPPORT	BIT(25)
@@ -176,12 +176,6 @@
 /* Max load for eMMC Vdd-io supply */
 #define MMC_VQMMC_MAX_LOAD_UA	325000
 
-/* Max load for SD Vdd supply */
-#define SD_VMMC_MAX_LOAD_UA	800000
-
-/* Max load for SD Vdd-io supply */
-#define SD_VQMMC_MAX_LOAD_UA	22000
-
 /*
  * Due to level shifter insertion, HS mode frequency is reduced to 37.5MHz
  * but clk's driver supply 37MHz only and uses ceil ops. So vote for
@@ -201,6 +195,12 @@
 #define VS_CAPABILITIES_SDR_50_SUPPORT BIT(0)
 #define VS_CAPABILITIES_SDR_104_SUPPORT BIT(1)
 #define VS_CAPABILITIES_DDR_50_SUPPORT BIT(2)
+
+/* Max load for SD Vdd supply */
+#define SD_VMMC_MAX_LOAD_UA	800000
+
+/* Max load for SD Vdd-io supply */
+#define SD_VQMMC_MAX_LOAD_UA	22000
 
 #define msm_host_readl(msm_host, host, offset) \
 	msm_host->var_ops->msm_readl_relaxed(host, offset)
@@ -1230,7 +1230,7 @@ static bool sdhci_msm_is_tuning_needed(struct sdhci_host *host)
 	struct mmc_ios *ios = &host->mmc->ios;
 
 	if (ios->timing == MMC_TIMING_UHS_SDR50 &&
-	    host->flags & SDHCI_SDR50_NEEDS_TUNING)
+			host->flags & SDHCI_SDR50_NEEDS_TUNING)
 		return true;
 
 	/*
@@ -1298,11 +1298,11 @@ static int sdhci_msm_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	int tuning_seq_cnt = 10;
 	u8 phase, tuned_phases[16], tuned_phase_cnt = 0;
 	int rc;
+	u32 config;
 	struct mmc_ios ios = host->mmc->ios;
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 	const struct sdhci_msm_offset *msm_offset = msm_host->offset;
-	u32 config;
 
 	if (!sdhci_msm_is_tuning_needed(host)) {
 		msm_host->use_cdr = false;
@@ -1320,10 +1320,10 @@ static int sdhci_msm_execute_tuning(struct mmc_host *mmc, u32 opcode)
 	msm_host->tuning_done = 0;
 
 	if (ios.timing == MMC_TIMING_UHS_SDR50 &&
-	    host->flags & SDHCI_SDR50_NEEDS_TUNING) {
+			host->flags & SDHCI_SDR50_NEEDS_TUNING) {
 		config = readl_relaxed(host->ioaddr + msm_offset->core_vendor_spec);
-		config &= ~CORE_HC_SELECT_IN_MASK;
-		config |= CORE_HC_SELECT_IN_EN | CORE_HC_SELECT_IN_SDR50;
+		config |= CORE_HC_SELECT_IN_EN;
+		config |= CORE_HC_SELECT_IN_SDR50;
 		writel_relaxed(config, host->ioaddr + msm_offset->core_vendor_spec);
 	}
 
@@ -1900,6 +1900,7 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 	u32 val = SWITCHABLE_SIGNALING_VOLTAGE;
 	const struct sdhci_msm_offset *msm_offset =
 					msm_host->offset;
+	struct mmc_host *mmc = host->mmc;
 
 	pr_debug("%s: %s: request %d curr_pwr_state %x curr_io_level %x\n",
 			mmc_hostname(host->mmc), __func__, req_type,
@@ -4795,7 +4796,6 @@ static void sdhci_msm_set_caps(struct sdhci_msm_host *msm_host)
 	msm_host->mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_NEED_RSP_BUSY;
 }
 
-#if IS_ENABLED(CONFIG_HIBERNATION)
 static int sdhci_msm_prepare_hibernation(struct sdhci_msm_host *msm_host)
 {
 	struct mmc_host *mhost = msm_host->mmc;
@@ -4855,9 +4855,6 @@ static int sdhci_msm_post_hibernation(struct sdhci_msm_host *msm_host)
 
 	if (!mhost->card)
 		return ret;
-
-	if (mhost->caps2 & MMC_CAP2_CRYPTO)
-		blk_ksm_reprogram_all_keys(&mhost->ksm);
 
 	mmc_get_card(mhost->card, NULL);
 
@@ -4922,7 +4919,6 @@ static int sdhci_msm_hibernation_notifier(struct notifier_block *notify_block,
 
 	return 0;
 }
-#endif /* End of CONFIG_HIBERNATION */
 
 /* RUMI W/A for SD card */
 static void sdhci_msm_set_rumi_bus_mode(struct sdhci_host *host)
@@ -5208,7 +5204,6 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	pm_runtime_mark_last_busy(&pdev->dev);
 	pm_runtime_put_autosuspend(&pdev->dev);
 
-#if IS_ENABLED(CONFIG_HIBERNATION)
 	msm_host->sdhci_msm_pm_notifier.notifier_call
 		= sdhci_msm_hibernation_notifier;
 	ret = register_pm_notifier(&msm_host->sdhci_msm_pm_notifier);
@@ -5217,7 +5212,6 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 				__func__, ret);
 		goto pm_runtime_disable;
 	}
-#endif
 
 	return 0;
 
@@ -5255,9 +5249,7 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 	int dead = (readl_relaxed(host->ioaddr + SDHCI_INT_STATUS) ==
 		    0xffffffff);
 
-#if IS_ENABLED(CONFIG_HIBERNATION)
 	unregister_pm_notifier(&msm_host->sdhci_msm_pm_notifier);
-#endif
 
 	sdhci_remove_host(host, dead);
 
