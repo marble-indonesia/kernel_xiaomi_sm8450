@@ -208,7 +208,7 @@ static struct qmi_elem_info ssctl_shutdown_resp_ei[] = {
 	{}
 };
 
-struct ssctl_subsys_event_req {
+struct ssctl_subsys_event_with_tid_req {
 	u32 subsys_name_len;
 	char subsys_name[SSCTL_SUBSYS_NAME_LENGTH];
 	u32 event;
