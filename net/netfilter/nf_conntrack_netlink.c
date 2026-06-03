@@ -3136,27 +3136,23 @@ errout:
 	return 0;
 }
 #endif
-
-static unsigned long ctnetlink_exp_id(const struct nf_conntrack_expect *exp)
+static int ctnetlink_exp_done(struct netlink_callback *cb)
 {
-	unsigned long id = (unsigned long)exp;
-
-	id += nf_ct_get_id(exp->master);
-	id += exp->class;
-
-	return id ? id : 1;
+	if (cb->args[1])
+		nf_ct_expect_put((struct nf_conntrack_expect *)cb->args[1]);
+	return 0;
 }
 
 static int
 ctnetlink_exp_dump_table(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct net *net = sock_net(skb->sk);
+	struct nf_conntrack_expect *exp, *last;
 	struct nfgenmsg *nfmsg = nlmsg_data(cb->nlh);
 	u_int8_t l3proto = nfmsg->nfgen_family;
-	unsigned long last_id = cb->args[1];
-	struct nf_conntrack_expect *exp;
 
 	rcu_read_lock();
+	last = (struct nf_conntrack_expect *)cb->args[1];
 	for (; cb->args[0] < nf_ct_expect_hsize; cb->args[0]++) {
 restart:
 		hlist_for_each_entry_rcu(exp, &nf_ct_expect_hash[cb->args[0]],
@@ -3168,7 +3164,7 @@ restart:
 				continue;
 
 			if (cb->args[1]) {
-				if (ctnetlink_exp_id(exp) != last_id)
+				if (exp != last)
 					continue;
 				cb->args[1] = 0;
 			}
@@ -3177,7 +3173,9 @@ restart:
 						    cb->nlh->nlmsg_seq,
 						    IPCTNL_MSG_EXP_NEW,
 						    exp) < 0) {
-				cb->args[1] = ctnetlink_exp_id(exp);
+				if (!refcount_inc_not_zero(&exp->use))
+					continue;
+				cb->args[1] = (unsigned long)exp;
 				goto out;
 			}
 		}
@@ -3188,30 +3186,32 @@ restart:
 	}
 out:
 	rcu_read_unlock();
+	if (last)
+		nf_ct_expect_put(last);
+
 	return skb->len;
 }
 
 static int
 ctnetlink_exp_ct_dump_table(struct sk_buff *skb, struct netlink_callback *cb)
 {
+	struct nf_conntrack_expect *exp, *last;
 	struct nfgenmsg *nfmsg = nlmsg_data(cb->nlh);
 	struct nf_conn *ct = cb->data;
 	struct nf_conn_help *help = nfct_help(ct);
 	u_int8_t l3proto = nfmsg->nfgen_family;
-	unsigned long last_id = cb->args[1];
-	struct nf_conntrack_expect *exp;
 
 	if (cb->args[0])
 		return 0;
 
 	rcu_read_lock();
-
+	last = (struct nf_conntrack_expect *)cb->args[1];
 restart:
 	hlist_for_each_entry_rcu(exp, &help->expectations, lnode) {
 		if (l3proto && exp->tuple.src.l3num != l3proto)
 			continue;
 		if (cb->args[1]) {
-			if (ctnetlink_exp_id(exp) != last_id)
+			if (exp != last)
 				continue;
 			cb->args[1] = 0;
 		}
@@ -3219,7 +3219,9 @@ restart:
 					    cb->nlh->nlmsg_seq,
 					    IPCTNL_MSG_EXP_NEW,
 					    exp) < 0) {
-			cb->args[1] = ctnetlink_exp_id(exp);
+			if (!refcount_inc_not_zero(&exp->use))
+				continue;
+			cb->args[1] = (unsigned long)exp;
 			goto out;
 		}
 	}
@@ -3230,6 +3232,9 @@ restart:
 	cb->args[0] = 1;
 out:
 	rcu_read_unlock();
+	if (last)
+		nf_ct_expect_put(last);
+
 	return skb->len;
 }
 
@@ -3248,6 +3253,7 @@ static int ctnetlink_dump_exp_ct(struct net *net, struct sock *ctnl,
 	struct nf_conntrack_zone zone;
 	struct netlink_dump_control c = {
 		.dump = ctnetlink_exp_ct_dump_table,
+		.done = ctnetlink_exp_done,
 	};
 
 	err = ctnetlink_parse_tuple(cda, &tuple, CTA_EXPECT_MASTER,
@@ -3298,6 +3304,7 @@ static int ctnetlink_get_expect(struct net *net, struct sock *ctnl,
 		else {
 			struct netlink_dump_control c = {
 				.dump = ctnetlink_exp_dump_table,
+				.done = ctnetlink_exp_done,
 			};
 			return netlink_dump_start(ctnl, skb, nlh, &c);
 		}
@@ -3455,7 +3462,7 @@ ctnetlink_change_expect(struct nf_conntrack_expect *x,
 
 #if IS_ENABLED(CONFIG_NF_NAT)
 static const struct nla_policy exp_nat_nla_policy[CTA_EXPECT_NAT_MAX+1] = {
-	[CTA_EXPECT_NAT_DIR]	= NLA_POLICY_MAX(NLA_BE32, IP_CT_DIR_REPLY),
+	[CTA_EXPECT_NAT_DIR]	= { .type = NLA_U32 },
 	[CTA_EXPECT_NAT_TUPLE]	= { .type = NLA_NESTED },
 };
 #endif
@@ -3549,12 +3556,6 @@ ctnetlink_alloc_expect(const struct nlattr * const cda[], struct nf_conn *ct,
 						 exp, nf_ct_l3num(ct));
 		if (err < 0)
 			goto err_out;
-#if IS_ENABLED(CONFIG_NF_NAT)
-	} else {
-		memset(&exp->saved_addr, 0, sizeof(exp->saved_addr));
-		memset(&exp->saved_proto, 0, sizeof(exp->saved_proto));
-		exp->dir = 0;
-#endif
 	}
 	return exp;
 err_out:
