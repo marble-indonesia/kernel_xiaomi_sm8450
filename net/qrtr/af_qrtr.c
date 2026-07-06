@@ -1461,7 +1461,7 @@ exit:
 static void qrtr_port_remove(struct qrtr_sock *ipc)
 {
 	int port = ipc->us.sq_port;
-	unsigned long flags;
+	unsigned long flags __maybe_unused;
 
 	qrtr_send_del_client(ipc);
 	if (port == QRTR_PORT_CTRL)
