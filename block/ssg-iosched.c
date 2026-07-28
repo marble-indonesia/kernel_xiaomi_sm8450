@@ -39,14 +39,14 @@ extern void blk_sec_stats_account_io_done(
 #define blk_sec_stats_account_io_done(rq, size, tgid, name, time) do {} while(0)
 #endif
 
-#define MAX_ASYNC_WRITE_RQS	8
+#define MAX_ASYNC_WRITE_RQS	10
 
-static const int read_expire = HZ / 2;		/* max time before a read is submitted. */
-static const int write_expire = 5 * HZ;		/* ditto for writes, these limits are SOFT! */
-static const int max_write_starvation = 2;	/* max times reads can starve a write */
-static const int congestion_threshold = 90;	/* percentage of congestion threshold */
-static const int max_tgroup_io_ratio = 50;	/* maximum service ratio for each thread group */
-static const int max_async_write_ratio = 25;	/* maximum service ratio for async write */
+static const int read_expire = 600;		/* max time before a read is submitted. */
+static const int write_expire = 20 * HZ;		/* ditto for writes, these limits are SOFT! */
+static const int max_write_starvation = 6;	/* max times reads can starve a write */
+static const int congestion_threshold = 50;	/* percentage of congestion threshold */
+static const int max_tgroup_io_ratio = 15;	/* maximum service ratio for each thread group */
+static const int max_async_write_ratio = 8;	/* maximum service ratio for async write */
 
 struct ssg_request_info {
 	pid_t tgid;
@@ -152,6 +152,23 @@ static inline struct ssg_request_info *ssg_rq_info(struct ssg_data *ssg,
 		return NULL;
 
 	return &ssg->rq_info[rq->internal_tag];
+}
+
+static inline void set_thread_group_info(struct ssg_request_info *rqi)
+{
+	struct task_struct *gleader = current->group_leader;
+
+	rqi->tgid = task_tgid_nr(gleader);
+	strncpy(rqi->tg_name, gleader->comm, TASK_COMM_LEN - 1);
+	rqi->tg_name[TASK_COMM_LEN - 1] = '\0';
+	rqi->tg_start_time = gleader->start_time;
+}
+
+static inline void clear_thread_group_info(struct ssg_request_info *rqi)
+{
+	rqi->tgid = 0;
+	rqi->tg_name[0] = '\0';
+	rqi->tg_start_time = 0;
 }
 
 /*
@@ -464,8 +481,8 @@ static void ssg_depth_updated(struct blk_mq_hw_ctx *hctx)
 	ssg->congestion_threshold_rqs = depth * congestion_threshold / 100U;
 
 	kfree(ssg->rq_info);
-	ssg->rq_info = kmalloc_array(depth, sizeof(struct ssg_request_info),
-				     GFP_KERNEL | __GFP_ZERO);
+	ssg->rq_info = kmalloc(depth * sizeof(struct ssg_request_info),
+			GFP_KERNEL | __GFP_ZERO);
 	if (ZERO_OR_NULL_PTR(ssg->rq_info))
 		ssg->rq_info = NULL;
 
@@ -506,6 +523,10 @@ static unsigned int ssg_tgroup_shallow_depth(struct blk_mq_alloc_data *data)
 	if (unlikely(!ssg->rq_info))
 		return 0;
 
+	if (!tgid)
+		return 0;
+
+	/* ponytail: O(n) scan on every congested allocation, per-tgid counter would be faster */
 	for (i = 0; i < nr_requests; i++)
 		if (tgid == ssg->rq_info[i].tgid)
 			tgroup_rqs++;
@@ -563,50 +584,58 @@ static void ssg_exit_queue(struct elevator_queue *e)
  */
 static int ssg_init_queue(struct request_queue *q, struct elevator_type *e)
 {
-	struct ssg_data *ssg;
-	struct elevator_queue *eq;
+    struct ssg_data *ssg;
+    struct elevator_queue *eq;
 
-	eq = elevator_alloc(q, e);
-	if (!eq)
-		return -ENOMEM;
+    eq = elevator_alloc(q, e);
+    if (!eq)
+        return -ENOMEM;
 
-	ssg = kzalloc_node(sizeof(*ssg), GFP_KERNEL, q->node);
-	if (!ssg) {
-		kobject_put(&eq->kobj);
-		return -ENOMEM;
-	}
-	eq->elevator_data = ssg;
+    ssg = kzalloc_node(sizeof(*ssg), GFP_KERNEL, q->node);
+    if (!ssg) {
+        kobject_put(&eq->kobj);
+        return -ENOMEM;
+    }
+    eq->elevator_data = ssg;
 
-	ssg->queue = q;
-	INIT_LIST_HEAD(&ssg->fifo_list[READ]);
-	INIT_LIST_HEAD(&ssg->fifo_list[WRITE]);
-	ssg->sort_list[READ] = RB_ROOT;
-	ssg->sort_list[WRITE] = RB_ROOT;
-	ssg->fifo_expire[READ] = read_expire;
-	ssg->fifo_expire[WRITE] = write_expire;
-	ssg->max_write_starvation = max_write_starvation;
-	ssg->front_merges = 1;
+    ssg->queue = q;
+    INIT_LIST_HEAD(&ssg->fifo_list[READ]);
+    INIT_LIST_HEAD(&ssg->fifo_list[WRITE]);
+    ssg->sort_list[READ] = RB_ROOT;
+    ssg->sort_list[WRITE] = RB_ROOT;
+    ssg->fifo_expire[READ]  = msecs_to_jiffies(read_expire);
+    ssg->fifo_expire[WRITE] = write_expire;
+    ssg->max_write_starvation = max_write_starvation;
+    ssg->front_merges = 1;
+    blk_queue_max_hw_sectors(q, 128 * 8);
+    q->backing_dev_info->ra_pages = 128;
+    blk_queue_rq_timeout(q, 5000);
 
-	atomic_set(&ssg->allocated_rqs, 0);
-	atomic_set(&ssg->async_write_rqs, 0);
-	ssg->congestion_threshold_rqs =
-		q->nr_requests * congestion_threshold / 100U;
-	ssg->rq_info = kmalloc_array(q->nr_requests, sizeof(struct ssg_request_info),
-				     GFP_KERNEL | __GFP_ZERO);
-	if (ZERO_OR_NULL_PTR(ssg->rq_info))
-		ssg->rq_info = NULL;
+    atomic_set(&ssg->allocated_rqs, 0);
+    atomic_set(&ssg->async_write_rqs, 0);
+    
+    ssg->congestion_threshold_rqs = q->nr_requests * congestion_threshold / 100U;
+    ssg->max_async_write_rqs = MAX_ASYNC_WRITE_RQS;
+    
+    ssg->rq_info = kmalloc(q->nr_requests * sizeof(struct ssg_request_info),
+            GFP_KERNEL | __GFP_ZERO);
+    if (ZERO_OR_NULL_PTR(ssg->rq_info))
+        ssg->rq_info = NULL;
 
-	spin_lock_init(&ssg->lock);
-	spin_lock_init(&ssg->zone_lock);
-	INIT_LIST_HEAD(&ssg->dispatch);
+    spin_lock_init(&ssg->lock);
+    spin_lock_init(&ssg->zone_lock);
+    INIT_LIST_HEAD(&ssg->dispatch);
 
-	ssg_blkcg_activate(q);
+    ssg_blkcg_activate(q);
 
-	q->elevator = eq;
+    q->elevator = eq;
 
-	blk_sec_stats_account_init(q);
-	return 0;
+    blk_sec_stats_account_init(q);
+    return 0;
 }
+
+
+
 
 static int ssg_request_merge(struct request_queue *q, struct request **rq,
 			    struct bio *bio)
@@ -624,10 +653,6 @@ static int ssg_request_merge(struct request_queue *q, struct request **rq,
 
 		if (elv_bio_merge_ok(__rq, bio)) {
 			*rq = __rq;
-
-			if (blk_discard_mergable(__rq))
-				return ELEVATOR_DISCARD_MERGE;
-
 			return ELEVATOR_FRONT_MERGE;
 		}
 	}
@@ -661,7 +686,6 @@ static void ssg_insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 	struct request_queue *q = hctx->queue;
 	struct ssg_data *ssg = q->elevator->elevator_data;
 	const int data_dir = rq_data_dir(rq);
-
 
 	/*
 	 * This may be a requeue of a write request that has locked its
@@ -726,7 +750,7 @@ static void ssg_prepare_request(struct request *rq)
 
 	rqi = ssg_rq_info(ssg, rq);
 	if (likely(rqi)) {
-		rqi->tgid = task_tgid_nr(current->group_leader);
+		set_thread_group_info(rqi);
 
 		rcu_read_lock();
 		rqi->blkg = blkg_lookup(css_to_blkcg(blkcg_css()), rq->q);
@@ -775,8 +799,7 @@ static void ssg_finish_request(struct request *rq)
 
 	rqi = ssg_rq_info(ssg, rq);
 	if (likely(rqi)) {
-		rqi->tgid = 0;
-
+		clear_thread_group_info(rqi);
 		ssg_blkcg_dec_rq(rqi->blkg);
 		rqi->blkg = NULL;
 	}
@@ -804,10 +827,9 @@ static ssize_t ssg_var_show(int var, char *page)
 
 static void ssg_var_store(int *var, const char *page)
 {
-	long val;
+	char *p = (char *) page;
 
-	if (!kstrtol(page, 10, &val))
-		*var = val;
+	*var = simple_strtol(p, &p, 10);
 }
 
 #define SHOW_FUNCTION(__FUNC, __VAR, __CONV)				\
