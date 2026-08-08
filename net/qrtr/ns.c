@@ -78,6 +78,20 @@ struct qrtr_node {
 	u32 server_count;
 };
 
+/* Max lookup limit is chosen based on the current platform requirements. If the
+ * requirement changes in the future, this value can be increased.
+ */
+#define QRTR_NS_MAX_LOOKUPS 64
+
+/* Max nodes, server, lookup limits are chosen based on the current platform
+ * requirements. If the requirement changes in the future, these values can be
+ * increased.
+ */
+#define QRTR_NS_MAX_NODES   64
+#define QRTR_NS_MAX_SERVERS 256
+
+static u8 node_count;
+
 static struct qrtr_node *node_get(unsigned int node_id)
 {
 	struct qrtr_node *node;
@@ -426,9 +440,6 @@ static int ctrl_cmd_bye(struct sockaddr_qrtr *from)
 					   srv->port, ret);
 	}
 
-<<<<<<< HEAD
-	return 0;
-=======
 	/* Ignore -ENODEV */
 	ret = 0;
 
@@ -438,7 +449,6 @@ delete_node:
 	node_count--;
 
 	return ret;
->>>>>>> linux/linux-5.10.y
 }
 
 static int ctrl_cmd_del_client(struct sockaddr_qrtr *from,
