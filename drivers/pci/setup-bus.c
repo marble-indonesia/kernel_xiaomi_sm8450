@@ -2264,12 +2264,8 @@ cleanup:
 		pci_claim_resource(bridge, i);
 		pci_setup_bridge(bridge->subordinate);
 	}
-	up_read(&pci_bus_sem);
-	free_list(&saved);
-=======
 	free_list(&saved);
 	up_read(&pci_bus_sem);
->>>>>>> google/android12-5.10-lts
 
 	return ret;
 }
