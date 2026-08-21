@@ -96,12 +96,7 @@ nlm_lookup_file(struct svc_rqst *rqstp, struct nlm_file **result,
 	mutex_lock(&nlm_file_mutex);
 
 	hlist_for_each_entry(file, &nlm_files[hash], f_list)
-		if (!nfs_compare_fh(&file->f_handle, &lock->fh)) {
-			mutex_lock(&file->f_mutex);
-			nfserr = nlm_do_fopen(rqstp, file, mode);
-			mutex_unlock(&file->f_mutex);
-			if (nfserr)
-				goto out_unlock;
+		if (!nfs_compare_fh(&file->f_handle, f))
 			goto found;
 
 	nlm_debug_print_fh("creating file for", f);
@@ -116,9 +111,16 @@ nlm_lookup_file(struct svc_rqst *rqstp, struct nlm_file **result,
 	INIT_HLIST_NODE(&file->f_list);
 	INIT_LIST_HEAD(&file->f_blocks);
 
-	nfserr = nlm_do_fopen(rqstp, file, mode);
-	if (nfserr)
+	/* Open the file. Note that this must not sleep for too long, else
+	 * we would lock up lockd:-) So no NFS re-exports, folks.
+	 *
+	 * We have to make sure we have the right credential to open
+	 * the file.
+	 */
+	if ((nfserr = nlmsvc_ops->fopen(rqstp, f, &file->f_file)) != 0) {
+		dprintk("lockd: open failed (error %d)\n", nfserr);
 		goto out_free;
+	}
 
 	hlist_add_head(&file->f_list, &nlm_files[hash]);
 
