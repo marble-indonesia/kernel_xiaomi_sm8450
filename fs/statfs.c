@@ -13,7 +13,6 @@
 #include <linux/susfs_def.h>
 #endif // #ifdef CONFIG_KSU_SUSFS
 
-#include "internal.h"
 
 static int flags_by_mnt(int mnt_flags)
 {
