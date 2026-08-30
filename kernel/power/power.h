@@ -163,6 +163,8 @@ extern bool hibernate_acquire(void);
 extern void hibernate_release(void);
 
 extern sector_t alloc_swapdev_block(int swap);
+extern struct block_device *hib_resume_bdev;
+extern uint32_t swap_auth_slot_offset;
 extern void free_all_swap_pages(int swap);
 extern int swsusp_swap_in_use(void);
 

@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/suspend.h>
 #include <linux/workqueue.h>
 
 #include "pdr_internal.h"
@@ -280,6 +281,8 @@ static void ind_notif_timeout_handler(struct timer_list *t)
 	if (IS_ENABLED(CONFIG_QCOM_PANIC_ON_PDR_NOTIF_TIMEOUT) &&
 	    system_state != SYSTEM_RESTART &&
 	    system_state != SYSTEM_POWER_OFF &&
+	    system_state != SYSTEM_SUSPEND &&
+	    !READ_ONCE(pm_freezing) &&
 	    system_state != SYSTEM_HALT &&
 	    !qcom_device_shutdown_in_progress)
 		panic(ind_notif_timeout_msg, pds->service_path, pds->state, ind->transaction_id);

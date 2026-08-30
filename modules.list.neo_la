@@ -1,4 +1,8 @@
 qcom_cpu_vendor_hooks.ko
+qcom_hib.ko
+qseecom-mod.ko
+smcinvoke_mod.ko
+qcom_secure_hibernation.ko
 gdsc-regulator.ko
 qcom_ipc_logging.ko
 ns.ko

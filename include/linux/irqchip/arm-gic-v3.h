@@ -706,6 +706,14 @@ struct gic_chip_data {
 	bool			has_rss;
 	unsigned int		ppi_nr;
 	struct partition_desc	**ppi_descs;
+#ifdef CONFIG_HIBERNATION
+	unsigned int enabled_irqs[32];
+	unsigned int active_irqs[32];
+	unsigned int irq_edg_lvl[64];
+	unsigned int ppi_edg_lvl;
+	unsigned int enabled_sgis;
+	unsigned int pending_sgis;
+#endif
 };
 
 static inline bool gic_enable_sre(void)
@@ -724,9 +732,6 @@ static inline bool gic_enable_sre(void)
 }
 
 void gic_resume(void);
-void gic_dist_init(void);
-void gic_cpu_init(void);
-void gic_dist_wait_for_rwp(void);
 
 #endif
 
