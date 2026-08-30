@@ -1,7 +1,7 @@
 /*
  * Author: andip71, 01.09.2017
  *
- * Version 1.1.0
+ * Version 1.2.0
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,6 +16,14 @@
 
 /*
  * Change log:
+ *
+ * 1.2.0 (2026-08-30)
+ *   - Curate the default list for portability across MTK/QCOM
+ *   - Match whole ';'-delimited names, not any substring
+ *   - Never block a hard wakeup event; restore pm_system_wakeup()
+ *   - Blocked events no longer arm the wakeup-source expiry timer
+ *   - Split out a side-effect-free predicate for the diagnostic walker
+ *   - Fix the active flag, list capacities and terminator bounds
  *
  * 1.1.0 (01.09.2017)
  *   - By default, the following wakelocks are blocked in an own list
@@ -54,16 +62,17 @@ extern bool wl_blocker_debug;
 // internal functions
 /*****************************************/
 
-static void build_search_string(char *list1, char *list2)
+static void build_search_string(const char *list1, const char *list2)
 {
-	// store wakelock list and search string (with semicolons added at start and end)
-	sprintf(list_wl_search, ";%s;%s;", list1, list2);
+	/* Rebuilt in place, unlocked: a concurrent reader can match against a
+	 * mixed old/new string for one scnprintf(), but never reads out of
+	 * bounds. Not worth a lock in the wakeup path. */
+	scnprintf(list_wl_search, LENGTH_LIST_WL_SEARCH, ";%s;%s;", list1, list2);
 
-	// set flag if wakelock blocker should be active (for performance reasons)
-	if (strlen(list_wl_search) > 5)
-		wl_blocker_active = true;
-	else
-		wl_blocker_active = false;
+	/* Either list non-empty. The old strlen(search) > 5 test measured the
+	 * delimiter-wrapped string, so a short entry (";a;;") left the blocker
+	 * off and the write silently did nothing. */
+	wl_blocker_active = list1[0] || list2[0];
 }
 
 
@@ -76,7 +85,7 @@ static ssize_t wakelock_blocker_show(struct device *dev, struct device_attribute
 			    char *buf)
 {
 	// return list of wakelocks to be blocked
-	return sprintf(buf, "%s\n", list_wl);
+	return scnprintf(buf, PAGE_SIZE, "%s\n", list_wl);
 }
 
 
@@ -84,14 +93,15 @@ static ssize_t wakelock_blocker_show(struct device *dev, struct device_attribute
 static ssize_t wakelock_blocker_store(struct device * dev, struct device_attribute *attr,
 			     const char * buf, size_t n)
 {
-	int len = n;
+	int len = strcspn(buf, "\n");
 
-	// check if string is too long to be stored
-	if (len > LENGTH_LIST_WL)
+	/* '>=': the terminator below needs the last byte. */
+	if (len >= LENGTH_LIST_WL)
 		return -EINVAL;
 
 	// store user configured wakelock list and rebuild search string
-	sscanf(buf, "%s", list_wl);
+	memcpy(list_wl, buf, len);
+	list_wl[len] = '\0';
 	build_search_string(list_wl_default, list_wl);
 
 	return n;
@@ -103,7 +113,7 @@ static ssize_t wakelock_blocker_default_show(struct device *dev, struct device_a
 			    char *buf)
 {
 	// return list of wakelocks to be blocked
-	return sprintf(buf, "%s\n", list_wl_default);
+	return scnprintf(buf, PAGE_SIZE, "%s\n", list_wl_default);
 }
 
 
@@ -111,14 +121,15 @@ static ssize_t wakelock_blocker_default_show(struct device *dev, struct device_a
 static ssize_t wakelock_blocker_default_store(struct device * dev, struct device_attribute *attr,
 			     const char * buf, size_t n)
 {
-	int len = n;
+	int len = strcspn(buf, "\n");
 
-	// check if string is too long to be stored
-	if (len > LENGTH_LIST_WL_DEFAULT)
+	/* '>=': the terminator below needs the last byte. */
+	if (len >= LENGTH_LIST_WL_DEFAULT)
 		return -EINVAL;
 
 	// store default, predefined wakelock list and rebuild search string
-	sscanf(buf, "%s", list_wl_default);
+	memcpy(list_wl_default, buf, len);
+	list_wl_default[len] = '\0';
 	build_search_string(list_wl_default, list_wl);
 
 	return n;
@@ -129,25 +140,41 @@ static ssize_t wakelock_blocker_default_store(struct device * dev, struct device
 static ssize_t debug_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	// return current debug status
-	return sprintf(buf, "Debug status: %d\n\nUser list: %s\nDefault list: %s\nSearch list: %s\nActive: %d\n",
-					wl_blocker_debug, list_wl, list_wl_default, list_wl_search, wl_blocker_active);
+	return scnprintf(buf, PAGE_SIZE,
+			 "Debug status: %d\n\nUser list: %s\nDefault list: %s\n"
+			 "Search list: %s\nActive: %d\n",
+			 wl_blocker_debug, list_wl, list_wl_default,
+			 list_wl_search, wl_blocker_active);
+}
+
+
+static int parse_strtoul(const char *buf, unsigned long max, unsigned long *value)
+{
+	char *endp;
+
+	*value = simple_strtoul(skip_spaces(buf), &endp, 0);
+	endp = skip_spaces(endp);
+	if (*endp || *value > max)
+		return -EINVAL;
+
+	return 0;
 }
 
 
 // store debug mode on/off (1/0)
 static ssize_t debug_store(struct device *dev, struct device_attribute *attr,
-						const char *buf, size_t count)
+			   const char *buf, size_t count)
 {
-	unsigned int ret = -EINVAL;
-	unsigned int val;
+	ssize_t ret = -EINVAL;
+	unsigned long val;
 
 	// check data and store if valid
-	ret = sscanf(buf, "%d", &val);
+	ret = parse_strtoul(buf, 1, &val);
 
-	if (ret != 1)
-		return -EINVAL;
+	if (ret)
+		return ret;
 
-	if (val == 1)
+	if (val)
 		wl_blocker_debug = true;
 	else
 		wl_blocker_debug = false;
@@ -159,7 +186,7 @@ static ssize_t debug_store(struct device *dev, struct device_attribute *attr,
 static ssize_t version_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	// return version information
-	return sprintf(buf, "%s\n", BOEFFLA_WL_BLOCKER_VERSION);
+	return scnprintf(buf, PAGE_SIZE, "%s\n", BOEFFLA_WL_BLOCKER_VERSION);
 }
 
 
@@ -169,10 +196,10 @@ static ssize_t version_show(struct device *dev, struct device_attribute *attr, c
 /*****************************************/
 
 // define objects
-static DEVICE_ATTR(wakelock_blocker, 0644, wakelock_blocker_show, wakelock_blocker_store);
-static DEVICE_ATTR(wakelock_blocker_default, 0644, wakelock_blocker_default_show, wakelock_blocker_default_store);
-static DEVICE_ATTR(debug, 0664, debug_show, debug_store);
-static DEVICE_ATTR(version, 0664, version_show, NULL);
+static DEVICE_ATTR_RW(wakelock_blocker);
+static DEVICE_ATTR_RW(wakelock_blocker_default);
+static DEVICE_ATTR_RW(debug);
+static DEVICE_ATTR_RO(version);
 
 // define attributes
 static struct attribute *boeffla_wl_blocker_attributes[] = {
@@ -210,7 +237,7 @@ static int boeffla_wl_blocker_init(void)
 	}
 
 	// initialize default list
-	sprintf(list_wl_default, "%s", LIST_WL_DEFAULT);
+	strcpy(list_wl_default, LIST_WL_DEFAULT);
 	build_search_string(list_wl_default, list_wl);
 
 	// Print debug info
