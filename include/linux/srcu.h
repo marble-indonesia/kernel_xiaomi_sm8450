@@ -150,14 +150,6 @@ static inline int srcu_read_lock_held(const struct srcu_struct *ssp)
  * srcu_read_unlock() in an irq handler if the matching srcu_read_lock()
  * was invoked in process context.
  */
-static inline int srcu_read_lock(struct srcu_struct *ssp) __acquires(ssp)
-{
-	int retval;
-
-	retval = __srcu_read_lock(ssp);
-	rcu_lock_acquire(&(ssp)->dep_map);
-	return retval;
-}
 
 /* Used by tracing, cannot be traced and cannot invoke lockdep. */
 static inline notrace int
@@ -206,7 +198,6 @@ static inline void smp_mb__after_srcu_read_unlock(void)
 }
 
 DEFINE_LOCK_GUARD_1(srcu, struct srcu_struct,
-		    _T->idx = srcu_read_lock(_T->lock),
 		    srcu_read_unlock(_T->lock, _T->idx),
 		    int idx)
 

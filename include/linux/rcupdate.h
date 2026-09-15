@@ -711,14 +711,6 @@ do {									      \
  * read-side critical sections may be preempted and they may also block, but
  * only when acquiring spinlocks that are subject to priority inheritance.
  */
-static __always_inline void rcu_read_lock(void)
-{
-	__rcu_read_lock();
-	__acquire(RCU);
-	rcu_lock_acquire(&rcu_lock_map);
-	RCU_LOCKDEP_WARN(!rcu_is_watching(),
-			 "rcu_read_lock() used illegally while idle");
-}
 
 /*
  * So where is rcu_write_lock()?  It does not exist, as there is no
