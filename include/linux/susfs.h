@@ -199,9 +199,14 @@ void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info);
 
 /* sus_kstat */
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-int susfs_sus_kstat_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf, bool *is_fuse);
 void susfs_add_sus_kstat(void __user **user_info);
 void susfs_update_sus_kstat(void __user **user_info);
+bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);
+void susfs_generic_fillattr_spoofer(struct inode *inode, struct kstat *stat, u32 result_mask);
+void susfs_show_map_vma_spoofer(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
+int susfs_sus_kstat_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf, bool *is_fuse);
+void susfs_sus_kstat_spoof_inotify_fdinfo(unsigned long *out_target_ino, dev_t *out_target_dev);
+void susfs_sus_kstat_spoof_proc_fd_seq_show(int *out_target_mnt_id, unsigned long *out_target_ino, dev_t target_dev);
 #endif
 
 /* spoof_uname */
