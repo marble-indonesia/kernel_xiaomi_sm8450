@@ -88,13 +88,15 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
  * tier), so its floor is pure resting power — the heat that pushes the
  * die over the limiter's step threshold and starts the spike cycle:
  * burst chase -> power spike -> limiter step -> cpu sag -> gpu sag. */
-#define RFX_G_PRIME_FLOOR_PCT		58
+#define RFX_G_PRIME_FLOOR_PCT		64
 #define RFX_G_BIG_FLOOR_PCT		58
 /* Warmup floor, both render tiers: spawn/asset load only, never steady state. */
 #define RFX_G_WARMUP_FLOOR_PCT		80
-/* Little never renders, so this floor is pure resting power: at the V/f knee
- * (== idle floor), never above it. Demand and up-rate-0 still cover a frame. */
-#define RFX_G_LITTLE_FLOOR_PCT		38
+/* Little never renders, but supports it: compositing, audio, input, and
+ * background streaming. Floor matches the big cluster at 58-60% so the
+ * spill work does not stall the render tier. Demand and up-rate-0 still
+ * cover a frame. */
+#define RFX_G_LITTLE_FLOOR_PCT		60
 
 /* Max downward slew, percent of ceiling per 2ms elapsed (so a half percent
  * per ms is expressible in integers). Bounds the depth a short lull can dig:
@@ -148,7 +150,10 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
  * while the limiter is taking capacity is heat exactly where fceil is falling.
  * ---- */
 #define RFX_G_DESCEND_DROP_PCT		15	/* points of skewed demand */
-#define RFX_G_DESCEND_FROM_PCT		RFX_GAMING_WARMUP_TRIGGER_PCT
+/* Hold the clock across a scene transition. Arms on a fall from above the
+ * warmup trigger; decoupling from a lowered TRIGGER keeps normal gameplay
+ * variation from firing the hold and stalling the next transition. */
+#define RFX_G_DESCEND_FROM_PCT		88
 #define RFX_G_DESCEND_HOLD_NS		((u64)RFX_EMA_MAX_STEPS * \
 					 RFX_EMA_DECAY_PERIOD_NS)	/* one frame gap */
 
@@ -208,13 +213,18 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
  * never rides the spawn phase. Measured-good decay + extended arm = the
  * window covers the gap without reintroducing the thermal sag that the
  * 1500ms-ramp experiment (since reverted) caused. */
-#define RFX_GAMING_WARMUP_NS		(1200 * NSEC_PER_MSEC)
-#define RFX_GAMING_WARMUP_MAX_NS	(1500 * NSEC_PER_MSEC)
-/* 75 skewed = 60% real demand. An animated countdown or load scene parks the
- * render tier around 40-60% real -- above the old 60 (48% real) line it never
- * counted quiet, so gameplay start arrived with no window. It also stops
- * moderate spill bursts (48-59% real) from riding the 80% floor on the spill
- * tier, whose resting power is what tips the limiter into its sawtooth. */
+/* The asset-load spike from spawn outlasts the old 300ms window: FPS
+ * traces show the initial crash to ~2 FPS lasting ~3.2s before the
+ * floor engages. Extend the window to cover that burst; the 60ms ramp
+ * decay still pulls the floor back during lulls so die heat never rides
+ * the spawn phase. Measured-good decay + extended arm = the window
+ * covers the gap without reintroducing thermal sag. */
+#define RFX_GAMING_WARMUP_NS		(600 * NSEC_PER_MSEC)
+#define RFX_GAMING_WARMUP_MAX_NS	(800 * NSEC_PER_MSEC)
+/* 75 skewed = 60% real demand. Measured-good in the 3061f2d baseline:
+ * arms reliably on a spawn burst of ~60% real demand without consuming
+ * the one-shot arm on launcher-tap noise (which sits at ~40-55% real).
+ * Below this, the warmup window opens too eagerly and stacks heat. */
 #define RFX_GAMING_WARMUP_TRIGGER_PCT	75
 #define RFX_GAMING_WARMUP_EXTEND_PCT	90
 #define RFX_GAMING_WARMUP_RELEASE_PCT	40
@@ -1256,7 +1266,12 @@ static void rfx_update(struct update_util_data *hook, u64 time,
 
 	raw_spin_lock_irqsave(&p->update_lock, irqflags);
 
-	rfx_iowait_boost(rfx_c, time, flags);
+	/* I/O wait boost is for daily storage wakeups only. Gaming already
+	 * has warmup floor + frame-risk rescue for burst response; letting
+	 * iowait stack another lift drives the render tier past its frame
+	 * budget and burns the surplus as heat under fceil. */
+	if (!gaming)
+		rfx_iowait_boost(rfx_c, time, flags);
 	rfx_c->last_update = time;
 	rfx_ignore_dl_rate_limit(rfx_c);
 	rfx_set_eval_delay(p, gaming);
