@@ -265,8 +265,8 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
  * taking capacity, so floors drop for relief and return at EXIT. A limiter
  * that reports continuously (vs step-wise) parks fceil between the two
  * thresholds; EXIT clears it well above ENTER so the band does not flap. */
-#define RFX_G_COOL_ENTER_PCT		80
-#define RFX_G_COOL_EXIT_PCT		88
+#define RFX_G_COOL_ENTER_PCT		70
+#define RFX_G_COOL_EXIT_PCT		92
 
 /* Relief floor once the platform is taking capacity. */
 #define RFX_G_COOL_STEADY_FLOOR_PCT	45
@@ -274,7 +274,7 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 /* Depth at which relief is fully applied: between ENTER and DEEP floors slide
  * down proportionally, so the clock walks with the ceiling instead of
  * stepping to the relief floor. */
-#define RFX_G_COOL_DEEP_PCT		50
+#define RFX_G_COOL_DEEP_PCT		40
 
 #define IOWAIT_BOOST_MIN		(SCHED_CAPACITY_SCALE / 8)
 
