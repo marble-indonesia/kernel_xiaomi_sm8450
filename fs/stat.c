@@ -106,20 +106,6 @@ int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
 	stat->attributes_mask |= (STATX_ATTR_AUTOMOUNT |
 				  STATX_ATTR_DAX);
 
-#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-	if (susfs_is_current_app_uid()) {
-		bool is_fuse = false;
-		if (susfs_is_inode_sus_kstat(d_backing_inode(path->dentry), &is_fuse)) {
-			if (!is_fuse) {
-				stat->mnt_id = real_mount(path->mnt)->mnt_id;
-				stat->result_mask |= STATX_SUS_KSTAT;
-			}
-			stat->mnt_id = real_mount(path->mnt)->mnt_id;
-			stat->result_mask |= STATX_SUS_KSTAT_FUSE;
-		}
-	}
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-
 	if (inode->i_op->getattr)
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
         {
