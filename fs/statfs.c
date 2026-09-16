@@ -13,6 +13,7 @@
 #include <linux/susfs_def.h>
 #endif // #ifdef CONFIG_KSU_SUSFS
 
+#include "internal.h"
 
 static int flags_by_mnt(int mnt_flags)
 {
@@ -75,7 +76,6 @@ static int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);
 extern int susfs_sus_kstat_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf, bool *is_fuse);
-
 static int susfs_statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf, bool *is_fuse)
 {
 	int retval;
@@ -87,10 +87,10 @@ static int susfs_statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf, bo
 	retval = security_sb_statfs(dentry);
 	if (retval)
 		return retval;
-	if (!susfs_sus_kstat_spoof_vfs_statfs(d_backing_inode(dentry), buf, is_fuse))
-		goto bypass_orig_flow;
+	if (susfs_sus_kstat_spoof_vfs_statfs(d_backing_inode(dentry), buf, is_fuse))
+		goto orig_flow;
 	retval = dentry->d_sb->s_op->statfs(dentry, buf);
-bypass_orig_flow:
+orig_flow:
 	if (retval == 0 && buf->f_frsize == 0)
 		buf->f_frsize = buf->f_bsize;
 	return retval;
@@ -124,9 +124,8 @@ int vfs_statfs(const struct path *path, struct kstatfs *buf)
 		struct inode *inode = d_backing_inode(path->dentry);
 		bool is_fuse = false;
 		if (susfs_is_inode_sus_kstat(inode, &is_fuse)) {
-			// - here we do not call calculate_f_flags() as buf->f_flags will be spoofed
-			//   by susfs_statfs_by_dentry().
-			return susfs_statfs_by_dentry(path->dentry, buf, &is_fuse);
+			error = susfs_statfs_by_dentry(path->dentry, buf, &is_fuse);
+			goto bypass_orig_flow;
 		}
 	}
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
@@ -139,9 +138,7 @@ int vfs_statfs(const struct path *path, struct kstatfs *buf)
 			dput(no_sus_vfsmnt->mnt_root);
 			mntput(no_sus_vfsmnt);
 			error = statfs_by_dentry(path->dentry, buf);
-			if (!error)
-				buf->f_flags = calculate_f_flags(path->mnt);
-			return error;
+			goto bypass_orig_flow;
 		}
 		error = statfs_by_dentry(no_sus_vfsmnt->mnt_root, buf);
 		if (!error)
@@ -153,6 +150,9 @@ int vfs_statfs(const struct path *path, struct kstatfs *buf)
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
 	error = statfs_by_dentry(path->dentry, buf);
+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_SUS_KSTAT)
+bypass_orig_flow:
+#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_SUS_KSTAT)
 	if (!error)
 		buf->f_flags = calculate_f_flags(path->mnt);
 	return error;
