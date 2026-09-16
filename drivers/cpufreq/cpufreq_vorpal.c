@@ -90,13 +90,16 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
  * burst chase -> power spike -> limiter step -> cpu sag -> gpu sag. */
 #define RFX_G_PRIME_FLOOR_PCT		64
 #define RFX_G_BIG_FLOOR_PCT		58
-/* Warmup floor, both render tiers: spawn/asset load only, never steady state. */
-#define RFX_G_WARMUP_FLOOR_PCT		80
+/* Warmup floor: just enough to carry a spawn burst past frame budget,
+ * low enough that holding it for 600ms does not build the heat that
+ * trips the limiter mid-session (the 1m48s freeze pattern). */
+#define RFX_G_WARMUP_FLOOR_PCT		70
 /* Little never renders, but supports it: compositing, audio, input, and
- * background streaming. Floor matches the big cluster at 58-60% so the
- * spill work does not stall the render tier. Demand and up-rate-0 still
- * cover a frame. */
-#define RFX_G_LITTLE_FLOOR_PCT		60
+ * background streaming. Floor lowered to V/f knee + a small lift so the
+ * idle cluster does not bake the die for a minute before the first burst
+ * trips the limiter (freeze pattern observed at 1m48s). Demand and
+ * up-rate-0 still cover a frame. */
+#define RFX_G_LITTLE_FLOOR_PCT		48
 
 /* Max downward slew, percent of ceiling per 2ms elapsed (so a half percent
  * per ms is expressible in integers). Bounds the depth a short lull can dig:
@@ -266,12 +269,12 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 #define RFX_G_COOL_EXIT_PCT		88
 
 /* Relief floor once the platform is taking capacity. */
-#define RFX_G_COOL_STEADY_FLOOR_PCT	52
+#define RFX_G_COOL_STEADY_FLOOR_PCT	45
 
 /* Depth at which relief is fully applied: between ENTER and DEEP floors slide
  * down proportionally, so the clock walks with the ceiling instead of
  * stepping to the relief floor. */
-#define RFX_G_COOL_DEEP_PCT		60
+#define RFX_G_COOL_DEEP_PCT		50
 
 #define IOWAIT_BOOST_MIN		(SCHED_CAPACITY_SCALE / 8)
 
