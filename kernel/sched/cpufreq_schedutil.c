@@ -54,7 +54,6 @@ struct sugov_cpu {
 	unsigned int		iowait_boost;
 	u64			last_update;
 
-	unsigned long		util;
 	unsigned long		bw_dl;
 	unsigned long		max;
 
@@ -67,17 +66,6 @@ struct sugov_cpu {
 static DEFINE_PER_CPU(struct sugov_cpu, sugov_cpu);
 
 /************************ Governor internals ***********************/
-
-static void sugov_update_rate_limit_us(struct sugov_policy *sg_policy)
-{
-	/*
-	 * Cast rate_limit_us before multiplication to force 64-bit arithmetic.
-	 * Otherwise, on 32-bit platforms, both operands are converted to
-	 * 32-bit unsigned long and the multiplication may overflow.
-	 */
-	sg_policy->freq_update_delay_ns =
-		(s64)sg_policy->tunables->rate_limit_us * NSEC_PER_USEC;
-}
 
 static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 {
@@ -319,15 +307,16 @@ unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 }
 EXPORT_SYMBOL_GPL(schedutil_cpu_util);
 
-static void sugov_get_util(struct sugov_cpu *sg_cpu)
+static unsigned long sugov_get_util(struct sugov_cpu *sg_cpu)
 {
 	struct rq *rq = cpu_rq(sg_cpu->cpu);
+	unsigned long util = cpu_util_cfs(rq);
 	unsigned long max = arch_scale_cpu_capacity(sg_cpu->cpu);
 
 	sg_cpu->max = max;
 	sg_cpu->bw_dl = cpu_bw_dl(rq);
-	sg_cpu->util = schedutil_cpu_util(sg_cpu->cpu, cpu_util_cfs(rq), max,
-					  FREQUENCY_UTIL, NULL);
+
+	return schedutil_cpu_util(sg_cpu->cpu, util, max, FREQUENCY_UTIL, NULL);
 }
 
 /**
@@ -404,11 +393,13 @@ static void sugov_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
  * sugov_iowait_apply() - Apply the IO boost to a CPU.
  * @sg_cpu: the sugov data for the cpu to boost
  * @time: the update time from the caller
+ * @util: the utilization to (eventually) boost
+ * @max: the maximum value the utilization can be boosted to
  *
  * A CPU running a task which woken up after an IO operation can have its
  * utilization boosted to speed up the completion of those IO operations.
  * The IO boost value is increased each time a task wakes up from IO, in
- * sugov_iowait_boost(), and it's instead decreased by this function,
+ * sugov_iowait_apply(), and it's instead decreased by this function,
  * each time an increase has not been requested (!iowait_boost_pending).
  *
  * A CPU which also appears to have been idle for at least one tick has also
@@ -417,17 +408,18 @@ static void sugov_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
  * This mechanism is designed to boost high frequently IO waiting tasks, while
  * being more conservative on tasks which does sporadic IO operations.
  */
-static void sugov_iowait_apply(struct sugov_cpu *sg_cpu, u64 time)
+static unsigned long sugov_iowait_apply(struct sugov_cpu *sg_cpu, u64 time,
+					unsigned long util, unsigned long max)
 {
 	unsigned long boost;
 
 	/* No boost currently required */
 	if (!sg_cpu->iowait_boost)
-		return;
+		return util;
 
 	/* Reset boost if the CPU appears to have been idle enough */
 	if (sugov_iowait_reset(sg_cpu, time, false))
-		return;
+		return util;
 
 	if (!sg_cpu->iowait_boost_pending) {
 		/*
@@ -436,19 +428,18 @@ static void sugov_iowait_apply(struct sugov_cpu *sg_cpu, u64 time)
 		sg_cpu->iowait_boost >>= 1;
 		if (sg_cpu->iowait_boost < IOWAIT_BOOST_MIN) {
 			sg_cpu->iowait_boost = 0;
-			return;
+			return util;
 		}
 	}
 
 	sg_cpu->iowait_boost_pending = false;
 
 	/*
-	 * sg_cpu->util is already in capacity scale; convert iowait_boost
+	 * @util is already in capacity scale; convert iowait_boost
 	 * into the same scale so we can compare.
 	 */
-	boost = (sg_cpu->iowait_boost * sg_cpu->max) >> SCHED_CAPACITY_SHIFT;
-	if (sg_cpu->util < boost)
-		sg_cpu->util = boost;
+	boost = (sg_cpu->iowait_boost * max) >> SCHED_CAPACITY_SHIFT;
+	return max(boost, util);
 }
 
 #ifdef CONFIG_NO_HZ_COMMON
@@ -479,8 +470,9 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 {
 	struct sugov_cpu *sg_cpu = container_of(hook, struct sugov_cpu, update_util);
 	struct sugov_policy *sg_policy = sg_cpu->sg_policy;
-	unsigned int cached_freq = sg_policy->cached_raw_freq;
+	unsigned long util, max;
 	unsigned int next_f;
+	unsigned int cached_freq = sg_policy->cached_raw_freq;
 
 	sugov_iowait_boost(sg_cpu, time, flags);
 	sg_cpu->last_update = time;
@@ -490,10 +482,10 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	if (!sugov_should_update_freq(sg_policy, time))
 		return;
 
-	sugov_get_util(sg_cpu);
-	sugov_iowait_apply(sg_cpu, time);
-
-	next_f = get_next_freq(sg_policy, sg_cpu->util, sg_cpu->max);
+	util = sugov_get_util(sg_cpu);
+	max = sg_cpu->max;
+	util = sugov_iowait_apply(sg_cpu, time, util, max);
+	next_f = get_next_freq(sg_policy, util, max);
 	/*
 	 * Do not reduce the frequency if the CPU has not been idle
 	 * recently, as the reduction is likely to be premature then.
@@ -530,10 +522,9 @@ static unsigned int sugov_next_freq_shared(struct sugov_cpu *sg_cpu, u64 time)
 		struct sugov_cpu *j_sg_cpu = &per_cpu(sugov_cpu, j);
 		unsigned long j_util, j_max;
 
-		sugov_get_util(j_sg_cpu);
-		sugov_iowait_apply(j_sg_cpu, time);
-		j_util = j_sg_cpu->util;
+		j_util = sugov_get_util(j_sg_cpu);
 		j_max = j_sg_cpu->max;
+		j_util = sugov_iowait_apply(j_sg_cpu, time, j_util, j_max);
 
 		if (j_util * max > j_max * util) {
 			util = j_util;
@@ -635,7 +626,7 @@ rate_limit_us_store(struct gov_attr_set *attr_set, const char *buf, size_t count
 	tunables->rate_limit_us = rate_limit_us;
 
 	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
-		sugov_update_rate_limit_us(sg_policy);
+		sg_policy->freq_update_delay_ns = rate_limit_us * NSEC_PER_USEC;
 
 	return count;
 }
@@ -806,7 +797,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
-	tunables->rate_limit_us = cpufreq_policy_transition_delay_us(policy);
+	tunables->rate_limit_us = 2000;
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
@@ -865,7 +856,7 @@ static int sugov_start(struct cpufreq_policy *policy)
 	struct sugov_policy *sg_policy = policy->governor_data;
 	unsigned int cpu;
 
-	sugov_update_rate_limit_us(sg_policy);
+	sg_policy->freq_update_delay_ns	= sg_policy->tunables->rate_limit_us * NSEC_PER_USEC;
 	sg_policy->last_freq_update_time	= 0;
 	sg_policy->next_freq			= 0;
 	sg_policy->work_in_progress		= false;
@@ -980,25 +971,48 @@ cpufreq_governor_init(schedutil_gov);
  *   IRQ     - scale_irq_capacity() corrects util for time stolen by
  *             interrupts, which on a phone under touch is not negligible.
  *
- * schedutil_cpu_util(FREQUENCY_UTIL) is the same aggregation every other
- * governor in the tree uses, including its saturation shortcut. The 25%
- * margin stays here because Vorpal maps util->freq itself (fmax * util /
- * cap) rather than through map_util_freq(), which is where that margin
- * normally lives.
+ * This is schedutil_cpu_util(FREQUENCY_UTIL) inlined, with one difference:
+ * the RT-runnable shortcut is dropped. See the comment in the body. Every
+ * other term, and the order they are applied in, matches.
+ *
+ * The 25% margin stays here because Vorpal maps util->freq itself (fmax *
+ * util / cap) rather than through map_util_freq(), which is where that
+ * margin normally lives.
  */
 void rfx_get_util_gki510(int cpu, unsigned long boost,
 			 unsigned long *out_util, unsigned long *out_bw_min)
 {
 	struct rq *rq = cpu_rq(cpu);
-	unsigned long util, max_cap;
+	unsigned long util, dl_util, irq, max_cap;
 
 	max_cap = (unsigned long)arch_scale_cpu_capacity(cpu);
 
 	*out_bw_min = cpu_bw_dl(rq);
 
-	util = schedutil_cpu_util(cpu, cpu_util_cfs(rq), max_cap,
-				  FREQUENCY_UTIL, NULL);
+	/* schedutil_cpu_util(FREQUENCY_UTIL) minus its first early return, which
+	 * hands back max whenever any RT task is runnable and uclamp is unused.
+	 * The render path is SCHED_FIFO, so at 120fps that fires on nearly every
+	 * eval and the caller receives a saturated value it cannot shape - a flat
+	 * trace at fmax. RT time is already summed below, so the shortcut only
+	 * costs us the demand signal. Whether it fires depends on a userspace-set
+	 * static key, which is why one platform swung and the other did not. */
+	irq = cpu_util_irq(rq);
+	if (unlikely(irq >= max_cap)) {
+		util = max_cap;
+		goto boosted;
+	}
+	util = uclamp_rq_util_with(rq, cpu_util_cfs(rq) + cpu_util_rt(rq), NULL);
+	dl_util = cpu_util_dl(rq);
+	/* Real saturation: no idle time left, fmax is correct here. */
+	if (util + dl_util >= max_cap) {
+		util = max_cap;
+		goto boosted;
+	}
+	util = scale_irq_capacity(util, irq, max_cap);
+	util += irq + cpu_bw_dl(rq);
+	util = min(util, max_cap);
 
+boosted:
 	if (boost > util)
 		util = boost;
 
@@ -1017,3 +1031,28 @@ bool rfx_dl_bw_exceeded_gki510(int cpu, unsigned long bw_min)
 	return cpu_bw_dl(cpu_rq(cpu)) > bw_min;
 }
 EXPORT_SYMBOL_GPL(rfx_dl_bw_exceeded_gki510);
+
+/**
+ * rfx_setattr_sugov_gki510 - put Vorpal's DVFS worker in the SUGOV DL class.
+ *
+ * SCHED_FLAG_SUGOV is private to kernel/sched, so the governor cannot build the
+ * sched_attr itself. Same fake bandwidth as sugov_kthread_create(): admission
+ * control and the DL timers all skip a special entity, so the numbers are only
+ * there to satisfy __checkparam_dl.
+ */
+int rfx_setattr_sugov_gki510(struct task_struct *t)
+{
+	struct sched_attr attr = {
+		.size		= sizeof(struct sched_attr),
+		.sched_policy	= SCHED_DEADLINE,
+		.sched_flags	= SCHED_FLAG_SUGOV,
+		.sched_nice	= 0,
+		.sched_priority	= 0,
+		.sched_runtime	=  1000000,
+		.sched_deadline = 10000000,
+		.sched_period	= 10000000,
+	};
+
+	return sched_setattr_nocheck(t, &attr);
+}
+EXPORT_SYMBOL_GPL(rfx_setattr_sugov_gki510);
