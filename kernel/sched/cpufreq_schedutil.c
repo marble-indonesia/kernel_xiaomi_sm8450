@@ -1016,4 +1016,30 @@ bool rfx_dl_bw_exceeded_gki510(int cpu, unsigned long bw_min)
 {
 	return cpu_bw_dl(cpu_rq(cpu)) > bw_min;
 }
+
 EXPORT_SYMBOL_GPL(rfx_dl_bw_exceeded_gki510);
+
+/**
+ * rfx_setattr_sugov_gki510 - put Vorpal's DVFS worker in the SUGOV DL class.
+ *
+ * SCHED_FLAG_SUGOV is private to kernel/sched, so the governor cannot build the
+ * sched_attr itself. Same fake bandwidth as sugov_kthread_create(): admission
+ * control and the DL timers all skip a special entity, so the numbers are only
+ * there to satisfy __checkparam_dl.
+ */
+int rfx_setattr_sugov_gki510(struct task_struct *t)
+{
+	struct sched_attr attr = {
+		.size		= sizeof(struct sched_attr),
+		.sched_policy	= SCHED_DEADLINE,
+		.sched_flags	= SCHED_FLAG_SUGOV,
+		.sched_nice	= 0,
+		.sched_priority	= 0,
+		.sched_runtime	=  1000000,
+		.sched_deadline = 10000000,
+		.sched_period	= 10000000,
+	};
+
+	return sched_setattr_nocheck(t, &attr);
+}
+EXPORT_SYMBOL_GPL(rfx_setattr_sugov_gki510);
