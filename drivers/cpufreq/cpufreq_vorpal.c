@@ -113,48 +113,52 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 
 /* ---- Daily shaping, percent of effective ceiling. Caps only: the util EMA
  * plus PELT already carry any rise. ---- */
-/* Little daily cap (compositor + IME). Too tight forces longer-on to finish UI
- * work, a net energy loss; the sustained latch still bounds long foreground. */
-#define RFX_D_LITTLE_CAP_PCT		78
+/* Little daily cap (compositor + IME). Tighter cap for battery saving:
+ * 72% keeps UI responsive but shaves voltage at sustained load. */
+#define RFX_D_LITTLE_CAP_PCT		72
 /* Little knee floor -- a TIMED window on the wake edge, not a standing floor,
  * to carry the cold OPP climb past its transition hitch. Only Little, daily. */
-#define RFX_D_LITTLE_FLOOR_PCT		38
-#define RFX_D_LITTLE_FLOOR_ARM_PCT	20	/* arm on demand crossing up */
-#define RFX_D_LITTLE_FLOOR_REARM_PCT	10	/* re-arm only after parking (hysteresis) */
-#define RFX_D_LITTLE_FLOOR_NS		(120 * NSEC_PER_MSEC)	/* window length */
+#define RFX_D_LITTLE_FLOOR_PCT		35
+#define RFX_D_LITTLE_FLOOR_ARM_PCT	18	/* arm on demand crossing up */
+#define RFX_D_LITTLE_FLOOR_REARM_PCT	8	/* re-arm only after parking (hysteresis) */
+#define RFX_D_LITTLE_FLOOR_NS		(100 * NSEC_PER_MSEC)	/* window length */
 /* Sustained caps: long foreground work at lower voltage, above the lift gate so
  * the latch cannot flap. Latches skewed 1.25x (on ~58% real, off ~44%). */
-#define RFX_D_LITTLE_SUSTAINED_CAP_PCT	80
-#define RFX_D_LITTLE_LIFT_PCT		72
-#define RFX_D_LITTLE_DROP_PCT		55
-/* Big/Prime daily caps + shared sustained latch. Tighter caps extend CPU-on
- * time per task (net energy loss); 75/72 keep tasks short under fmax. */
-#define RFX_D_BIG_CAP_PCT		75
-#define RFX_D_PRIME_CAP_PCT		72
-#define RFX_D_BIG_LIFT_PCT		85
-#define RFX_D_BIG_DROP_PCT		68
-#define RFX_D_BIG_SUSTAINED_CAP_PCT	80
-#define RFX_D_PRIME_SUSTAINED_CAP_PCT	80
+#define RFX_D_LITTLE_SUSTAINED_CAP_PCT	75
+#define RFX_D_LITTLE_LIFT_PCT		68
+#define RFX_D_LITTLE_DROP_PCT		52
+/* Big/Prime daily caps + shared sustained latch. Tighter caps for battery:
+ * 70/68 keep tasks short under fmax while maintaining performance headroom. */
+#define RFX_D_BIG_CAP_PCT		70
+#define RFX_D_PRIME_CAP_PCT		68
+#define RFX_D_BIG_LIFT_PCT		80
+#define RFX_D_BIG_DROP_PCT		65
+#define RFX_D_BIG_SUSTAINED_CAP_PCT	75
+#define RFX_D_PRIME_SUSTAINED_CAP_PCT	75
 
 /* ---- Daily-only power features: applied while gaming_mode=0, inert while
  * gaming (the gaming band never reads them). Any 0 disables at build. ---- */
-/* Adaptive idle eval: poll slower while parked at fmin (never below tunable). */
-#define RFX_D_IDLE_EVAL_US		20000
+/* Adaptive idle eval: poll slower while parked at fmin (never below tunable).
+ * 25000us = 25ms reduces eval overhead during idle, saving power. */
+#define RFX_D_IDLE_EVAL_US		25000
 /* F5 daily: min dwell since the last up-commit before a drop (anti down-flap). */
-#define RFX_D_LITTLE_MIN_SAMPLE_US	3000
-#define RFX_D_BIG_MIN_SAMPLE_US		1500
+#define RFX_D_LITTLE_MIN_SAMPLE_US	4000
+#define RFX_D_BIG_MIN_SAMPLE_US		2000
 /* F4 daily: round down on descent above MIN_PCT (rises still round up, so the
- * fmin park stays fast). 30 (was 50): wider round-down band shaves resting
+ * fmin park stays fast). 25 (was 30): wider round-down band shaves more
  * voltage across the low-mid range -- the standing all-day drain. Daily only. */
 #define RFX_D_ENERGY_AWARE		1
-#define RFX_D_ENERGY_AWARE_MIN_PCT	30
-/* Daily thermal pre-cap: slide fceil -> MIN_PCT across START..FULL_MC (warmth). */
-#define RFX_D_THERM_CAP_MC		45000
-#define RFX_D_THERM_CAP_FULL_MC		52000
-#define RFX_D_THERM_CAP_MIN_PCT		65
-/* Park latch: enter fmin below ~3% (max_cap>>5), hold until EXIT_PCT for EXIT_EVALS. */
-#define RFX_D_PARK_EXIT_PCT		7
-#define RFX_D_PARK_EXIT_EVALS		2
+#define RFX_D_ENERGY_AWARE_MIN_PCT	25
+/* Daily thermal pre-cap: slide fceil -> MIN_PCT across START..FULL_MC (warmth).
+ * Lower thresholds for earlier thermal intervention = less thermal head buildup
+ * = lower sustained power draw under load. */
+#define RFX_D_THERM_CAP_MC		42000
+#define RFX_D_THERM_CAP_FULL_MC		48000
+#define RFX_D_THERM_CAP_MIN_PCT		60
+/* Park latch: enter fmin below ~3% (max_cap>>5), hold until EXIT_PCT for EXIT_EVALS.
+ * Higher exit threshold = deeper park hold = less frequency thrashing. */
+#define RFX_D_PARK_EXIT_PCT		9
+#define RFX_D_PARK_EXIT_EVALS		3
 
 /* ---- Util EMA: rise instant, decay time-normalised, so the time constant is
  * independent of eval rate. Period = interval removing 1/DIVISOR of the
@@ -181,8 +185,9 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 
 /* ---- Headroom above demand, percent. Stacks on the 25% DVFS margin already
  * applied by rfx_get_util_gki510, so this only raises the resting OPP. ---- */
-#define RFX_HEADROOM_DAILY_HIGH		2
-#define RFX_HEADROOM_DAILY_MID		1
+/* Daily: lower headroom for battery saving. 1/0 = minimal voltage overhead. */
+#define RFX_HEADROOM_DAILY_HIGH		1
+#define RFX_HEADROOM_DAILY_MID		0
 /* Gaming headroom, phased in linearly from the GATE: below it the resting OPP
  * is untouched, above it a frame is near budget and this closes the gap.
  * 8 points at 100% util = ~8% of fceil, the single-core gap that kept SC
@@ -193,17 +198,19 @@ extern int rfx_setattr_sugov_gki510(struct task_struct *t);
 /* Util percent at which we stop interpolating and request fmax outright.
  * Gaming 100 disables the shortcut: any lower value makes the render tier
  * JUMP to fmax early and pin flat there -- top voltage step, no FPS gained.
- * Daily 95: the last OPP is a battery cost and the caps shape the top. */
+ * Daily 92: slightly lower threshold, avoiding the highest OPP for battery
+ * saving while the caps already shape the top end. */
 #define RFX_SAT_TO_MAX_GAMING_PCT	100
-#define RFX_SAT_TO_MAX_DAILY_PCT	95
+#define RFX_SAT_TO_MAX_DAILY_PCT	92
 
 /* ---- Thermal emergency net. HW LMH (thermal_pressure) and the vendor HAL
  * (policy->max) are the real controllers; this is one hard latched net for when
  * the vendor engine is absent. One trip, one release. Trip sits ABOVE a normal
  * pre-match soak (a lower trip pinned every cluster at session start -> MC
  * stall); 80% cap where LMH is absent avoids the old 70% benchmark stall. */
+/* Longer poll interval in idle for power saving (10s = less wakeups). */
 #define RFX_THERMAL_POLL_GAMING_MS	50
-#define RFX_THERMAL_POLL_IDLE_MS	8000	/* deferrable: free in deep sleep */
+#define RFX_THERMAL_POLL_IDLE_MS	10000	/* deferrable: free in deep sleep */
 #define RFX_THERMAL_POLL_WARM_MS	2000
 #define RFX_TEMP_WARM_MC		70000
 #define RFX_TEMP_EMERGENCY_MC		110000	/* above a normal soak; LMH acts far below */
