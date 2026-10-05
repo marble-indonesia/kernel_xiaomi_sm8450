@@ -61,6 +61,12 @@ config CPU_IDLE_SIMPLE_GOV_QCOM_LPM
 	tristate "Qualcomm Technologies, Inc. CPU and Cluster simple governor"
 	depends on ARCH_QCOM
 	depends on ARM_PSCI_CPUIDLE
+	Select it with the cpuidle.governor=nap kernel command line
+	 argument.
+
+config CPU_IDLE_GOV_NAP_SELFTEST
+	bool "Self-test the NAP governor's fixed-point math at boot"
+	depends on CPU_IDLE_GOV_NAP
 	help
 	  This governor allows the cpu and cluster to deeper idle states more aggressively
 	  by reducing cpuidle parameters such as the entry, exit latencies and the residency.
