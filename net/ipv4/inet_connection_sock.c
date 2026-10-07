@@ -931,15 +931,6 @@ void inet_csk_destroy_sock(struct sock *sk)
 }
 EXPORT_SYMBOL(inet_csk_destroy_sock);
 
-void inet_csk_prepare_for_destroy_sock(struct sock *sk)
-{
-	/* The below has to be done to allow calling inet_csk_destroy_sock */
-	if (sk->sk_protocol == IPPROTO_TCP)
-		tcp_clear_sock_ops_cb_flags(sk);
-	sock_set_flag(sk, SOCK_DEAD);
-	this_cpu_inc(*sk->sk_prot->orphan_count);
-}
-
 /* This function allows to force a closure of a socket after the call to
  * tcp/dccp_create_openreq_child().
  */
@@ -949,7 +940,6 @@ void inet_csk_prepare_forced_close(struct sock *sk)
 	/* sk_clone_lock locked the socket and set refcnt to 2 */
 	bh_unlock_sock(sk);
 	sock_put(sk);
-	inet_csk_prepare_for_destroy_sock(sk);
 	inet_sk(sk)->inet_num = 0;
 }
 EXPORT_SYMBOL(inet_csk_prepare_forced_close);
