@@ -103,25 +103,4 @@ ifdef CONFIG_DEBUG_FS
 obj-$(CONFIG_MSM_RPM_SMD)   +=  rpm-smd-debug.o
 endif
 obj-$(CONFIG_QCOM_KRYO_L2_ACCESSORS) +=	kryo-l2-accessors.o
-obj-$(CONFIG_QTI_SYS_PM_VX) += sys_pm_vx.o
-obj-$(CONFIG_MSM_EXT_DISPLAY) += msm_ext_display.o
-obj-$(CONFIG_ICNSS2) += icnss2/
-obj-$(CONFIG_QTI_HW_MEMLAT) += rimps_memlat.o
-obj-$(CONFIG_QTI_HW_MEMLAT_LOG)	+= rimps_log.o
-obj-$(CONFIG_QTI_PLH_SCMI_CLIENT) += plh_scmi.o
-obj-$(CONFIG_QTI_GPLAF_SCMI_CLIENT) += gplaf_scmi.o
-obj-$(CONFIG_QTI_SHARED_RAIL_CLIENT) += shared_rail_scmi.o
-obj-$(CONFIG_QCOM_QDSS_BRIDGE) += qdss_bridge.o
-obj-$(CONFIG_QCOM_DCVS) += dcvs/
-obj-$(CONFIG_QCOM_CPU_VENDOR_HOOKS) += qcom_cpu_vendor_hooks.o
-obj-$(CONFIG_QCOM_LOGBUF_VENDOR_HOOKS) += qcom_logbuf_vendor_hooks.o
-obj-$(CONFIG_QCOM_PANEL_EVENT_NOTIFIER) += panel_event_notifier.o
-obj-$(CONFIG_QCOM_SPEC_SYNC)  += sync_fence/
-obj-$(CONFIG_MSM_TMECOM_QMP) += tmecom/
-obj-$(CONFIG_QCOM_HUNG_TASK_ENH) += hung_task_enh.o
-obj-$(CONFIG_QCOM_QFPROM_SYS) += qfprom-sys.o
-obj-$(CONFIG_MSM_HELIOSCOM) += helioscom_spi.o
-obj-$(CONFIG_MSM_HELIOSCOM_INTERFACE) += helioscom_interface.o
-obj-$(CONFIG_QTI_OEMVM_CORE_CTL) += oemvm_core_ctl.o
-obj-$(CONFIG_QCOM_S2D_VENDOR_HOOK) += qcom_hib.o
-obj-$(CONFIG_QCOM_SECURE_HIBERNATION) += qcom_secure_hibernation.o
+obj-$(CONFIG_QCOM_PAGE_COMPRESSION_ENGINE) += qpace.o
