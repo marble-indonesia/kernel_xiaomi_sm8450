@@ -80,8 +80,8 @@
  */
 
 // Balanced latency windows for UFS + eMMC (ns)
-static u64 default_global_latency_window = 12000000ULL;  // 12ms
-static u8  default_bq_refill_below_ratio = 25;
+static u64 default_global_latency_window = 12000000ULL;  // 12ms (was 8ms)
+static u8  default_bq_refill_below_ratio = 25;  // Balanced refill (was 40)
 static u64 default_lat_model_latency_limit = 500 * NSEC_PER_MSEC;  // 500ms cap (eMMC-safe)
 static u64 default_batch_order = 0;
 
@@ -94,10 +94,10 @@ enum adios_compliance_flags {
 
 static u64 default_compliance_flags = 0x0;
 
-// Dynamic thresholds for shrinkage
-static u32 default_lm_shrink_at_kreqs  =  5000;
-static u32 default_lm_shrink_at_gbytes =    50;
-static u32 default_lm_shrink_resist    =     2;
+// Dynamic thresholds for shrinkage - Lower for faster stabilization
+static u32 default_lm_shrink_at_kreqs  =  1500;  // Was 5000 - stabilize after 1.5k requests
+static u32 default_lm_shrink_at_gbytes =    15;  // Was 50 - faster adaptation
+static u32 default_lm_shrink_resist    =     1;  // Was 2 - less resistance to shrink
 
 enum adios_optype {
 	ADIOS_READ    = 0,
@@ -108,17 +108,18 @@ enum adios_optype {
 };
 
 // Balanced latency targets (async only; sync writes bypass via Tier-2)
+// Balanced write latency target for UFS Hibern8 deep sleep and sequential coalescing
 static u64 default_latency_target[ADIOS_OPTYPES] = {
 	[ADIOS_READ]    =    2ULL * NSEC_PER_MSEC,  // 2ms
-	[ADIOS_WRITE]   =  250ULL * NSEC_PER_MSEC,  // 250ms: coalesce writeback to let storage idle
+	[ADIOS_WRITE]   =  250ULL * NSEC_PER_MSEC,  // 250ms (was 150ms): coalesce writeback, save power
 	[ADIOS_DISCARD] = 5000ULL * NSEC_PER_MSEC,  // 5s
 	[ADIOS_OTHER]   =    0ULL * NSEC_PER_MSEC,
 };
 
-// Batch limits: moderate caps; async_depth auto-scales to device queue depth
+// Batch limits: balanced limits for throughput and deep sleep
 static u32 default_batch_limit[ADIOS_OPTYPES] = {
-	[ADIOS_READ]    = 32,
-	[ADIOS_WRITE]   = 64,
+	[ADIOS_READ]    = 32,  // Balanced read batch (was 48)
+	[ADIOS_WRITE]   = 64,  // Balanced write batch (was 96)
 	[ADIOS_DISCARD] =  1,
 	[ADIOS_OTHER]   =  1,
 };
@@ -1260,8 +1261,7 @@ found:
 
 // Timer callback for model updates. Armed on-demand from the completion path
 // (timer_reduce) and deliberately does NOT re-arm itself: when I/O stops the
-// timer fires once, updates the models, then stays idle. It is deferrable, so
-// the final completion in a burst cannot wake an otherwise idle CPU.
+// timer fires once, updates the models, then stays idle so the CPU can sleep.
 static void update_timer_callback(struct timer_list *t) {
 	struct adios_data *ad = from_timer(ad, t, update_timer);
 
@@ -1455,7 +1455,7 @@ static int adios_init_sched(struct request_queue *q, struct elevator_type *e) {
 	spin_lock_init(&ad->barrier_lock);
 	INIT_LIST_HEAD(&ad->barrier_queue);
 
-	timer_setup(&ad->update_timer, update_timer_callback, TIMER_DEFERRABLE);
+	timer_setup(&ad->update_timer, update_timer_callback, 0);
 
 	ad->queue = q;
 	blk_stat_enable_accounting(q);
