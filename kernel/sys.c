@@ -77,6 +77,7 @@
 #include "uid16.h"
 
 #include <trace/hooks/sys.h>
+#include <linux/uname_spoof.h>
 
 #ifndef SET_UNALIGN_CTL
 # define SET_UNALIGN_CTL(a, b)	(-EINVAL)
@@ -1285,6 +1286,34 @@ SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 		return -EFAULT;
 	if (override_architecture(name))
 		return -EFAULT;
+#ifdef CONFIG_UNAME_SPOOF
+	/*
+	 * Targeted processes get the stock release/version strings
+	 * instead of the real ones, to avoid tripping attestation
+	 * checks that inspect uname() output.
+	 */
+	if (uname_spoof_should_spoof()) {
+		const char *rel = uname_spoof_get_release();
+		const char *ver = uname_spoof_get_version();
+
+		if (rel) {
+			char spoof_rel[__NEW_UTS_LEN + 1] = {};
+
+			strscpy(spoof_rel, rel, sizeof(spoof_rel));
+			if (copy_to_user(name->release, spoof_rel,
+					 sizeof(spoof_rel)))
+				return -EFAULT;
+		}
+		if (ver) {
+			char spoof_ver[__NEW_UTS_LEN + 1] = {};
+
+			strscpy(spoof_ver, ver, sizeof(spoof_ver));
+			if (copy_to_user(name->version, spoof_ver,
+					 sizeof(spoof_ver)))
+				return -EFAULT;
+		}
+	}
+#endif
 	return 0;
 }
 
@@ -1309,6 +1338,29 @@ SYSCALL_DEFINE1(uname, struct old_utsname __user *, name)
 		return -EFAULT;
 	if (override_architecture(name))
 		return -EFAULT;
+#ifdef CONFIG_UNAME_SPOOF
+	if (uname_spoof_should_spoof()) {
+		const char *rel = uname_spoof_get_release();
+		const char *ver = uname_spoof_get_version();
+
+		if (rel) {
+			char spoof_rel[__NEW_UTS_LEN + 1] = {};
+
+			strscpy(spoof_rel, rel, sizeof(spoof_rel));
+			if (copy_to_user(name->release, spoof_rel,
+					 sizeof(spoof_rel)))
+				return -EFAULT;
+		}
+		if (ver) {
+			char spoof_ver[__NEW_UTS_LEN + 1] = {};
+
+			strscpy(spoof_ver, ver, sizeof(spoof_ver));
+			if (copy_to_user(name->version, spoof_ver,
+					 sizeof(spoof_ver)))
+				return -EFAULT;
+		}
+	}
+#endif
 	return 0;
 }
 
