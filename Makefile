@@ -670,6 +670,14 @@ ifdef need-config
 include include/config/auto.conf
 endif
 
+ifdef CONFIG_UNAME_SPOOF
+# Keep the real build timestamp in WIB. A POSIX TZ string is used so this
+# does not depend on tzdata. Targeted processes get the stock one from
+# CONFIG_UNAME_SPOOF_VERSION at runtime instead.
+export KBUILD_BUILD_TIMESTAMP := $(shell LC_ALL=C TZ=WIB-7 date)
+export KBUILD_BUILD_VERSION := 1
+endif
+
 ifeq ($(KBUILD_EXTMOD),)
 # Objects we will link into vmlinux / subdirs we need to visit
 core-y		:= init/ usr/
