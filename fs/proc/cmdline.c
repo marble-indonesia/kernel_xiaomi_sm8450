@@ -4,9 +4,42 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 
+#include <linux/slab.h>
+#include <linux/string.h>
+
 static int cmdline_proc_show(struct seq_file *m, void *v)
 {
-	seq_puts(m, saved_command_line);
+	char *cmdline, *token, *pos;
+	bool first = true;
+
+	cmdline = kstrdup(saved_command_line, GFP_KERNEL);
+	if (!cmdline) {
+		seq_puts(m, saved_command_line);
+		seq_putc(m, '\n');
+		return 0;
+	}
+
+	pos = cmdline;
+	while ((token = strsep(&pos, " \t\n")) != NULL) {
+		if (!*token)
+			continue;
+
+		if (!first)
+			seq_putc(m, ' ');
+		first = false;
+
+		if (strncmp(token, "androidboot.verifiedbootstate=", 30) == 0) {
+			seq_puts(m, "androidboot.verifiedbootstate=green");
+		} else if (strncmp(token, "androidboot.flash.locked=", 25) == 0) {
+			seq_puts(m, "androidboot.flash.locked=1");
+		} else if (strncmp(token, "androidboot.vbmeta.device_state=", 32) == 0) {
+			seq_puts(m, "androidboot.vbmeta.device_state=locked");
+		} else {
+			seq_puts(m, token);
+		}
+	}
+
+	kfree(cmdline);
 	seq_putc(m, '\n');
 	return 0;
 }
