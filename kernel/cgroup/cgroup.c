@@ -58,8 +58,6 @@
 #include <linux/sched/cputime.h>
 #include <linux/sched/deadline.h>
 #include <linux/psi.h>
-#include <linux/binfmts.h>
-#include <linux/cpu_boost.h>
 #include <net/sock.h>
 
 #define CREATE_TRACE_POINTS
@@ -5000,13 +4998,6 @@ static ssize_t cgroup_procs_write(struct kernfs_open_file *of,
 		goto out_finish;
 
 	ret = cgroup_attach_task(dst_cgrp, task, true);
-
-	/* This covers boosting for app launches and app transitions */
-	if (!ret && !threadgroup &&
-	    !memcmp(of->kn->parent->name, "top-app", sizeof("top-app")) &&
-	    task_is_zygote(task->parent)) {
-		cpu_boost_max(500);
-	}
 
 out_finish:
 	cgroup_procs_write_finish(task, threadgroup_locked);
