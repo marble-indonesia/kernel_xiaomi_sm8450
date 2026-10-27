@@ -45,6 +45,13 @@ config QCOM_QDSS_BRIDGE
 	  MHI and USB interface.
 	  If unsure, say N.
 
+config QCOM_MSM_EXT_DISPLAY
+       tristate "Qualcomm MSM External Display"
+       depends on OF
+       help
+         Enable Qualcomm MSM external display support
+         required by the HDMI audio codec driver.
+
 config QCOM_MEM_OFFLINE
 	tristate "Dynamic Memory Region Offline driver"
 	depends on MEMORY_HOTPLUG

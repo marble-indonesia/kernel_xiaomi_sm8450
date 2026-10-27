@@ -85,6 +85,7 @@ obj-$(CONFIG_MSM_REMOTEQDSS) += remoteqdss.o
 obj-$(CONFIG_MSM_SPSS_UTILS) += spss_utils.o
 obj-$(CONFIG_MSM_IDLE_STATS)	+= lpm-stats.o
 obj-$(CONFIG_MSM_PERFORMANCE) += msm_performance.o
+obj-y += msm_ext_display.o
 obj-$(CONFIG_QPNP_PBS) += qpnp-pbs.o
 obj-$(CONFIG_MSM_SPCOM) += spcom.o
 obj-$(CONFIG_QCOM_CDSP_RM) += cdsprm.o

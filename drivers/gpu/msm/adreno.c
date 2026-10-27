@@ -1114,7 +1114,7 @@ static int adreno_probe_llcc(struct adreno_device *adreno_dev,
 
 	if (adreno_is_a621(adreno_dev)) {
 		/* Get the system cache slice descriptor for GPU MV grid buffer */
-		adreno_dev->gpumv_llc_slice = llcc_slice_getd(LLCC_GPUMV);
+		adreno_dev->gpumv_llc_slice = ERR_PTR(-ENOENT);
 		ret = PTR_ERR_OR_ZERO(adreno_dev->gpumv_llc_slice);
 		if (ret) {
 			if (ret == -EPROBE_DEFER) {
