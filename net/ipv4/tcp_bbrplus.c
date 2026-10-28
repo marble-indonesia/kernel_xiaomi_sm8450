@@ -275,9 +275,9 @@ static u32 bbr_tso_segs_goal(struct sock *sk)
 	return min_t(u32, segs, 0x7FU);
 }
 
-static u32 bbr_min_tso_segs(struct sock *sk)
+static u32 bbrplus_tso_segs(struct sock *sk, unsigned int mss_now)
 {
-	return sk->sk_pacing_rate < (bbr_min_tso_rate >> 3) ? 1 : 2;
+    return tcp_tso_autosize(sk, mss_now, 2);
 }
 
 static void bbr_save_cwnd(struct sock *sk)
@@ -837,7 +837,7 @@ static struct tcp_congestion_ops tcp_bbrplus_cong_ops __read_mostly = {
 	.undo_cwnd	= bbr_undo_cwnd,
 	.cwnd_event	= bbr_cwnd_event,
 	.ssthresh	= bbr_ssthresh,
-	.min_tso_segs	= bbr_min_tso_segs,
+	.tso_segs 	= bbrplus_tso_segs,
 	.get_info	= bbr_get_info,
 	.set_state	= bbr_set_state,
 };
