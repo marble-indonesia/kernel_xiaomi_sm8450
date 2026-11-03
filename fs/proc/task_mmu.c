@@ -21,6 +21,9 @@
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
 #include <linux/cpufreq.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
 
 #include <asm/elf.h>
 #include <asm/tlb.h>
