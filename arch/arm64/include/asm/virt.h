@@ -122,10 +122,14 @@ static __always_inline bool has_vhe(void)
 
 static __always_inline bool is_protected_kvm_enabled(void)
 {
-	if (is_vhe_hyp_code())
-		return false;
-	else
-		return cpus_have_final_cap(ARM64_KVM_PROTECTED_MODE);
+#if defined(CONFIG_KVM) && defined(ARM64_KVM_PROTECTED_MODE)
+    if (is_vhe_hyp_code())
+        return false;
+
+    return cpus_have_final_cap(ARM64_KVM_PROTECTED_MODE);
+#else
+    return false;
+#endif
 }
 
 #endif /* __ASSEMBLY__ */
