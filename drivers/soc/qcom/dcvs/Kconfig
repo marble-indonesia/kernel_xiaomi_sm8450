@@ -234,4 +234,3 @@ config QCOM_DCVS_BOOST_KHZ_L3
 	  kHz floor to vote on L3 during a boost window; 0 disables L3 boosting.
 
 endif
->>>>>>> 39a22e11e62c (soc/qcom/dcvs: Implement a simple boosting driver)
