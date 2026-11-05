@@ -217,7 +217,7 @@ struct qrtr_tx_flow {
 #define QRTR_TX_FLOW_LOW	5
 
 static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt,
-                                              gfp_t gfp);
+                                            gfp_t flags);
 static int qrtr_local_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 			      int type, struct sockaddr_qrtr *from,
 			      struct sockaddr_qrtr *to, unsigned int flags);
@@ -414,12 +414,10 @@ static void __qrtr_node_release(struct kref *kref)
 	struct qrtr_tx_flow_waiter *temp;
 	struct qrtr_node *node = container_of(kref, struct qrtr_node, ref);
 	unsigned long flags;
+	unsigned long flow_index;
 	void __rcu **slot;
 
 	spin_lock_irqsave(&qrtr_nodes_lock, flags);
-	/* If the node is a bridge for other nodes, there are possibly
-	 * multiple entries pointing to our released node, delete them all.
-	 */
 	radix_tree_for_each_slot(slot, &qrtr_nodes, &iter, 0) {
 		if (*slot == node)
 			radix_tree_iter_delete(&qrtr_nodes, &iter, slot);
@@ -431,7 +429,7 @@ static void __qrtr_node_release(struct kref *kref)
 
 	/* Free tx flow counters */
 	mutex_lock(&node->qrtr_tx_lock);
-	xa_for_each(&node->qrtr_tx_flow, index, flow) {
+	xa_for_each(&node->qrtr_tx_flow, flow_index, flow) {
 		list_for_each_entry_safe(waiter, temp, &flow->waiters, node) {
 			list_del(&waiter->node);
 			sock_put(waiter->sk);
@@ -1014,19 +1012,20 @@ EXPORT_SYMBOL_GPL(qrtr_endpoint_post);
  * This function allocates a sk_buff large enough to carry a qrtr_ctrl_pkt and
  * on success returns a reference to the control packet in @pkt.
  */
-static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt)
+static struct sk_buff *qrtr_alloc_ctrl_packet(struct qrtr_ctrl_pkt **pkt,
+                                            gfp_t flags)
 {
-	const int pkt_len = sizeof(struct qrtr_ctrl_pkt);
-	struct sk_buff *skb;
+        const int pkt_len = sizeof(struct qrtr_ctrl_pkt);
+        struct sk_buff *skb;
 
-	skb = alloc_skb(QRTR_HDR_MAX_SIZE + pkt_len, GFP_KERNEL);
-	if (!skb)
-		return NULL;
+        skb = alloc_skb(QRTR_HDR_MAX_SIZE + pkt_len, flags);
+        if (!skb)
+                return NULL;
 
-	skb_reserve(skb, QRTR_HDR_MAX_SIZE);
-	*pkt = skb_put_zero(skb, pkt_len);
+        skb_reserve(skb, QRTR_HDR_MAX_SIZE);
+        *pkt = skb_put_zero(skb, pkt_len);
 
-	return skb;
+        return skb;
 }
 
 static bool qrtr_must_forward(struct qrtr_node *src,
