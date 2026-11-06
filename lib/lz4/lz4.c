@@ -1698,6 +1698,7 @@ int LZ4_compress_fast_extState_fastReset(void *state, const char *src,
 		}
 	}
 }
+EXPORT_SYMBOL(LZ4_compress_fast_extState_fastReset);
 
 int LZ4_compress_fast(const char *src, char *dest, int srcSize, int dstCapacity,
 		      int acceleration)
@@ -1849,6 +1850,7 @@ LZ4_stream_t *LZ4_initStream(void *buffer, size_t size)
 	MEM_INIT(buffer, 0, sizeof(LZ4_stream_t_internal));
 	return (LZ4_stream_t *)buffer;
 }
+EXPORT_SYMBOL(LZ4_initStream);
 
 /* resetStream is now deprecated,
  * prefer initStream() which is more general */
@@ -1862,6 +1864,7 @@ void LZ4_resetStream_fast(LZ4_stream_t *ctx)
 {
 	LZ4_prepareTable(&(ctx->internal_donotuse), 0, byU32);
 }
+EXPORT_SYMBOL(LZ4_resetStream_fast);
 
 #if !defined(LZ4_STATIC_LINKING_ONLY_DISABLE_MEMORY_ALLOCATION)
 int LZ4_freeStream(LZ4_stream_t *LZ4_stream)
