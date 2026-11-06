@@ -1595,7 +1595,7 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 		if (freq > cap)
 			freq = cap;
 
-		if (max_uclamp_min && !p->parked && (touch || ucmin_pct >= 8)) {
+		if (max_uclamp_min && !p->parked && (touch || p->dl_bw_exceeded || demand_pct >= 15 || ucmin_pct >= 25)) {
 			unsigned int uclamp_freq = (unsigned int)((u64)pol->cpuinfo.max_freq *
 						   max_uclamp_min / max_cap);
 			unsigned int uclamp_cap;
@@ -1643,8 +1643,10 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 			int idx = cpufreq_frequency_table_target(pol, freq,
 								 CPUFREQ_RELATION_H);
 
-			if (idx >= 0)
+			if (idx >= 0) {
+				pol->cached_resolved_idx = idx;
 				return pol->freq_table[idx].frequency;
+			}
 		}
 	}
 	return cpufreq_driver_resolve_freq(pol, freq);
@@ -1765,8 +1767,8 @@ static void rfx_get_util(struct rfx_cpu *rfx_c, unsigned long boost)
 static inline void rfx_ignore_dl_rate_limit(struct rfx_cpu *rfx_c)
 {
 	if (rfx_dl_bw_exceeded_gki510(rfx_c->cpu, rfx_c->bwmin)) {
+		WRITE_ONCE(rfx_c->rfx_policy->limits_changed, true);
 		rfx_c->rfx_policy->need_freq_update = true;
-		rfx_c->rfx_policy->dl_bw_exceeded = true;
 	}
 }
 
@@ -2077,7 +2079,6 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 
 	if (!gaming) {
 		unsigned int fmin = p->policy->min;
-		bool has_media = p->dl_bw_exceeded || (max_uclamp_min * 100 / max_cap >= 8);
 		unsigned int park_thresh =
 			(unsigned int)(max_cap * RFX_D_IDLE_FLOOR_SNAP_PCT / 100);
 
@@ -2092,10 +2093,10 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 
 		/*
 		 * Fast Idle Snap to policy->min: when utilization drops near zero
-		 * without touch and without active media, immediately park to fmin
-		 * with zero downward delay to allow rapid deep C-state entry.
+		 * without touch, immediately park to fmin with zero downward delay
+		 * to allow rapid deep C-state entry.
 		 */
-		if (!touch && !has_media && (max_util == 0 || p->filt_util < (max_cap * 2 / 100))) {
+		if (!touch && (max_util == 0 || p->filt_util < (max_cap * 2 / 100))) {
 			p->parked = true;
 			p->park_exit_count = 0;
 			p->pending_raw_freq = fmin;
@@ -2143,16 +2144,16 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 		} else if (!p->is_little) {
 			/*
 			 * Daily Mode Big Cluster Conservation:
-			 * When not interacting with touch/media and demand is under 22%,
+			 * When not interacting with touch and demand is under 22%,
 			 * park Big cluster to fmin so Little cores handle background loads.
 			 */
-			if (!touch && !has_media && p->filt_util < (max_cap * 22 / 100)) {
+			if (!touch && p->filt_util < (max_cap * 22 / 100)) {
 				p->parked = true;
 				p->park_exit_count = 0;
 				p->pending_raw_freq = fmin;
 				return fmin;
 			}
-			if (touch || has_media) {
+			if (touch) {
 				p->parked = false;
 				p->park_exit_count = RFX_D_PARK_EXIT_EVALS;
 			} else if (p->parked) {
@@ -2165,13 +2166,13 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 			}
 		} else {
 			/* Little cluster: park to fmin when true idle */
-			if (!touch && !has_media && p->filt_util < park_thresh) {
+			if (!touch && p->filt_util < park_thresh) {
 				p->parked = true;
 				p->park_exit_count = 0;
 				p->pending_raw_freq = fmin;
 				return fmin;
 			}
-			if (touch || has_media) {
+			if (touch) {
 				p->parked = false;
 				p->park_exit_count = RFX_D_PARK_EXIT_EVALS;
 			} else if (p->parked) {
@@ -2213,6 +2214,7 @@ static void rfx_update(struct update_util_data *hook, u64 time,
 	if (rfx_should_update_freq(p, time)) {
 		p->last_eval_time = time;
 		next_f = rfx_next_freq(rfx_c, time, gaming);
+		next_f = cpufreq_driver_resolve_freq(p->policy, next_f);
 		if (rfx_commit_freq(p, time, next_f)) {
 
 			unsigned long cap = arch_scale_cpu_capacity(rfx_c->cpu);
@@ -2559,6 +2561,7 @@ static ssize_t gaming_mode_store(struct gov_attr_set *attr_set,
 			p->freq_update_delay_ns =
 				(s64)p->tunables->rate_limit_us * NSEC_PER_USEC;
 			p->prev_gaming_mode = false;
+			p->need_freq_update = true;
 			raw_spin_unlock_irqrestore(&p->update_lock, pflags);
 		}
 		spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
@@ -2866,6 +2869,8 @@ static int rfx_start(struct cpufreq_policy *policy)
 	p->last_downfreq_time = now;
 	p->last_eval_time = now;
 	p->next_freq = policy->cur > 0 ? policy->cur : policy->min;
+	if (policy->fast_switch_enabled)
+		cpufreq_driver_resolve_freq(policy, p->next_freq);
 	p->cached_raw_freq = 0;
 	p->pending_raw_freq = 0;
 	p->ceil_rise_pct = 100;
