@@ -44,8 +44,6 @@
 #include <linux/slab.h>
 #include <linux/compat.h>
 #include <linux/random.h>
-#include <linux/sysctl.h>
-#include <linux/bitmap.h>
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
@@ -230,7 +228,7 @@ static void timer_update_keys(struct work_struct *work);
 static DECLARE_WORK(timer_update_work, timer_update_keys);
 
 #ifdef CONFIG_SMP
-static unsigned int sysctl_timer_migration = 1;
+unsigned int sysctl_timer_migration = 0;
 
 DEFINE_STATIC_KEY_FALSE(timers_migration_enabled);
 
@@ -242,41 +240,18 @@ static void timers_update_migration(void)
 		static_branch_disable(&timers_migration_enabled);
 }
 
-#ifdef CONFIG_SYSCTL
-static int timer_migration_handler(struct ctl_table *table, int write,
-			    void *buffer, size_t *lenp, loff_t *ppos)
+static int __init setup_timer_migration(char *str)
 {
-	int ret;
+	unsigned int val;
 
-	mutex_lock(&timer_keys_mutex);
-	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
-	if (!ret && write)
-		timers_update_migration();
-	mutex_unlock(&timer_keys_mutex);
-	return ret;
+	if (kstrtouint(str, 0, &val))
+		return 0;
+
+	sysctl_timer_migration = (val != 0);
+	return 1;
 }
-
-static struct ctl_table timer_sysctl[] = {
-	{
-		.procname	= "timer_migration",
-		.data		= &sysctl_timer_migration,
-		.maxlen		= sizeof(unsigned int),
-		.mode		= 0644,
-		.proc_handler	= timer_migration_handler,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{}
-};
-
-static int __init timer_sysctl_init(void)
-{
-	register_sysctl("kernel", timer_sysctl);
-	return 0;
-}
-device_initcall(timer_sysctl_init);
-#endif /* CONFIG_SYSCTL */
-#else /* CONFIG_SMP */
+__setup("timer_migration=", setup_timer_migration);
+#else
 static inline void timers_update_migration(void) { }
 #endif /* !CONFIG_SMP */
 
@@ -291,6 +266,19 @@ static void timer_update_keys(struct work_struct *work)
 void timers_update_nohz(void)
 {
 	schedule_work(&timer_update_work);
+}
+
+int timer_migration_handler(struct ctl_table *table, int write,
+			    void *buffer, size_t *lenp, loff_t *ppos)
+{
+	int ret;
+
+	mutex_lock(&timer_keys_mutex);
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (!ret && write)
+		timers_update_migration();
+	mutex_unlock(&timer_keys_mutex);
+	return ret;
 }
 
 static inline bool is_timers_nohz_active(void)
@@ -1836,13 +1824,17 @@ void run_local_timers(void)
 	struct timer_base *base = this_cpu_ptr(&timer_bases[BASE_STD]);
 
 	hrtimer_run_queues();
-	/* Raise the softirq only if required. */
-	if (time_before(jiffies, base->next_expiry)) {
+	/*
+	 * BACKPORT (Linux 6.12):
+	 * Raise the softirq only if timers are actually pending and expired.
+	 * Avoids triggering spurious timer softirqs on idle or lightly loaded CPUs.
+	 */
+	if (!READ_ONCE(base->timers_pending) || time_before(jiffies, base->next_expiry)) {
 		if (!IS_ENABLED(CONFIG_NO_HZ_COMMON))
 			return;
 		/* CPU is awake, so check the deferrable base. */
 		base++;
-		if (time_before(jiffies, base->next_expiry))
+		if (!READ_ONCE(base->timers_pending) || time_before(jiffies, base->next_expiry))
 			return;
 	}
 	raise_softirq(TIMER_SOFTIRQ);
@@ -2042,7 +2034,6 @@ int timers_dead_cpu(unsigned int cpu)
 		for (i = 0; i < WHEEL_SIZE; i++)
 			migrate_timer_list(new_base, old_base->vectors + i);
 
-		bitmap_zero(old_base->pending_map, WHEEL_SIZE);
 		raw_spin_unlock(&old_base->lock);
 		raw_spin_unlock_irq(&new_base->lock);
 		put_cpu_ptr(&timer_bases);
