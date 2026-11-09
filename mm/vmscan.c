@@ -178,8 +178,9 @@ struct scan_control {
 
 /*
  * From 0 .. 200.  Higher means more swappy.
+ * Default 100 for optimal zRAM performance on mobile devices.
  */
-int vm_swappiness = 60;
+int vm_swappiness = 100;
 
 #define DEF_KSWAPD_THREADS_PER_NODE 1
 static int kswapd_threads = DEF_KSWAPD_THREADS_PER_NODE;
