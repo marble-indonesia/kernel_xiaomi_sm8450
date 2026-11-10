@@ -227,9 +227,10 @@ config CPU_FREQ_GOV_VORPAL
 	select CPU_FREQ_GOV_ATTR_SET
 	select IRQ_WORK
 	help
-	  Vorpal CPUFreq Governor v1.0 (GKI 5.10).
-	  Combines interactive hispeed ramp-up with PELT tracking.
-	  Module: cpufreq_vorpal. If in doubt, say M.
+	  Vorpal CPUFreq Governor v2.3 (GKI 5.10).
+	  Schedutil-derived governor with dual-profile gaming/daily modes,
+	  tri-cluster awareness, zero-jitter UI, and proactive thermal pacing.
+	  If in doubt, say Y.
 
 comment "CPU frequency scaling drivers"
 
