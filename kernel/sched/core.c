@@ -23,6 +23,9 @@
 #include "../workqueue_internal.h"
 #include "../../io_uring/io-wq.h"
 #include "../smpboot.h"
+#ifdef CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif /* CONFIG_SCHED_BORE */
 
 #include "pelt.h"
 #include "smp.h"
@@ -886,7 +889,13 @@ int tg_nop(struct task_group *tg, void *data)
 static void set_load_weight(struct task_struct *p)
 {
 	bool update_load = !(READ_ONCE(p->state) & TASK_NEW);
+#ifdef CONFIG_SCHED_BORE
+	/* 7.0.0: the weight follows the effective prio (static + BORE
+	 * burst score), so a static-prio change keeps the demotion. */
+	int prio = effective_prio_bore(p);
+#else /* !CONFIG_SCHED_BORE */
 	int prio = p->static_prio - MAX_RT_PRIO;
+#endif /* CONFIG_SCHED_BORE */
 	struct load_weight lw;
 
 	if (task_has_idle_policy(p)) {
@@ -921,7 +930,7 @@ static void set_load_weight(struct task_struct *p)
 static DEFINE_MUTEX(uclamp_mutex);
 
 /* Max allowed minimum utilization */
-unsigned int sysctl_sched_uclamp_util_min = SCHED_CAPACITY_SCALE;
+unsigned int sysctl_sched_uclamp_util_min = 0;
 
 /* Max allowed maximum utilization */
 unsigned int sysctl_sched_uclamp_util_max = SCHED_CAPACITY_SCALE;
@@ -3292,6 +3301,7 @@ int wake_up_state(struct task_struct *p, unsigned int state)
 	return try_to_wake_up(p, state, 0);
 }
 
+
 /*
  * Perform scheduler related setup for a newly forked process p.
  * p is forked by current.
@@ -3308,6 +3318,10 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->se.prev_sum_exec_runtime	= 0;
 	p->se.nr_migrations		= 0;
 	p->se.vruntime			= 0;
+	p->se.vlag			= 0;
+	p->se.slice			= sysctl_sched_min_granularity;
+	p->se.deadline			= 0;
+	p->se.min_deadline		= 0;
 	INIT_LIST_HEAD(&p->se.group_node);
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -7474,6 +7488,12 @@ void __init sched_init(void)
 	BUG_ON(&dl_sched_class + 1 != &stop_sched_class);
 #endif
 
+#ifdef CONFIG_SCHED_BORE
+	sched_init_bore();
+	printk(KERN_INFO "%s %s by %s\n", SCHED_BORE_PROGNAME,
+		SCHED_BORE_VERSION, SCHED_BORE_AUTHOR);
+#endif // CONFIG_SCHED_BORE
+
 	wait_bit_init();
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -8024,6 +8044,25 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 	/* Propagate the effective uclamp value for the new group */
 	mutex_lock(&uclamp_mutex);
 	rcu_read_lock();
+
+	if (css->cgroup && css->cgroup->kn && css->cgroup->kn->name) {
+		const char *name = css->cgroup->kn->name;
+
+		if (!strcmp(name, "top-app")) {
+			/*
+			 * Foreground UI app: mark latency-sensitive so EAS targets the lowest
+			 * exit-latency idle CPU immediately without synthetic clamp floor inflating
+			 * idle utilization or delaying deep sleep.
+			 */
+			tg->latency_sensitive = 1;
+		} else if (!strcmp(name, "background") || !strcmp(name, "system-background")) {
+			/* Background work: capped to avoid burning power and heating CPU */
+			static_branch_enable(&sched_uclamp_used);
+			uclamp_se_set(&tg->uclamp_req[UCLAMP_MAX], 307, false);
+			tg->uclamp_pct[UCLAMP_MAX] = 3000;
+		}
+	}
+
 	cpu_util_update_eff(css);
 	rcu_read_unlock();
 	mutex_unlock(&uclamp_mutex);
