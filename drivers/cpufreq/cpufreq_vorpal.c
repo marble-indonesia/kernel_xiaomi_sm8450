@@ -54,6 +54,10 @@
 #include <linux/atomic.h>
 #include <linux/list.h>
 #include <linux/suspend.h>
+#ifdef CONFIG_POWERSUSPEND
+#include <linux/powersuspend.h>
+static bool rfx_screen_off;
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/vorpal.h>
@@ -330,6 +334,7 @@ struct rfx_policy {
 	bool dormant;
 	unsigned int park_enter_count;
 	u64 park_since_ns;
+	u64 resume_unlock_until_ns;
 
 	/* Ceiling filter state */
 	unsigned int ceil_rise_pct;
@@ -775,6 +780,17 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 	util = rfx_apply_headroom(util, max_cap, gaming, little);
 	freq = (unsigned int)((u64)pol->cpuinfo.max_freq * util / max_cap);
 	freq = clamp(freq, fmin, fceil);
+
+#ifdef CONFIG_POWERSUSPEND
+	if (unlikely(READ_ONCE(rfx_suspended) || READ_ONCE(rfx_screen_off))) {
+#else
+	if (unlikely(READ_ONCE(rfx_suspended))) {
+#endif
+		if (!little)
+			return fmin;
+		if (freq > rfx_pct(fceil, 38))
+			freq = rfx_pct(fceil, 38);
+	}
 
 	if (gaming) {
 		bool warmup_active;
@@ -1261,8 +1277,20 @@ static inline void rfx_set_eval_delay(struct rfx_policy *p, bool gaming)
 		return;
 	}
 
+#ifdef CONFIG_POWERSUSPEND
+	if (unlikely(READ_ONCE(rfx_suspended) || READ_ONCE(rfx_screen_off))) {
+		p->freq_update_delay_ns = (s64)50000 * NSEC_PER_USEC;
+		return;
+	}
+#else
 	if (unlikely(READ_ONCE(rfx_suspended))) {
 		p->freq_update_delay_ns = (s64)250000 * NSEC_PER_USEC;
+		return;
+	}
+#endif
+
+	if (p->resume_unlock_until_ns && sched_clock() < p->resume_unlock_until_ns) {
+		p->freq_update_delay_ns = (s64)p->tunables->rate_limit_us * NSEC_PER_USEC;
 		return;
 	}
 
@@ -1398,17 +1426,31 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 					READ_ONCE(p->policy->min));
 		/* Adaptive park threshold: 12.5% across clusters for swift quiescent descent */
 		unsigned long park_thresh = max_cap >> RFX_D_PARK_UTIL_SHIFT;
+		bool screen_dormant = READ_ONCE(rfx_suspended);
+		bool in_resume_window = p->resume_unlock_until_ns && time < p->resume_unlock_until_ns;
 
-		/* Instant Suspend Park: when PM suspend is active, keep all cores pinned to fmin */
-		if (unlikely(READ_ONCE(rfx_suspended))) {
-			p->parked = true;
-			p->dormant = true;
+#ifdef CONFIG_POWERSUSPEND
+		screen_dormant = screen_dormant || READ_ONCE(rfx_screen_off);
+#endif
+
+		/* Instant Screen-Off & Suspend Standby: keep Big & Prime hard-parked to fmin */
+		if (unlikely(screen_dormant)) {
+			if (!p->is_little) {
+				p->parked = true;
+				p->dormant = true;
+				p->pending_raw_freq = fmin;
+				p->down_rate_delay_ns = 0;
+				return fmin;
+			}
+			/* Little cluster during screen-off: park to fmin when under threshold */
 			p->pending_raw_freq = fmin;
-			p->down_rate_delay_ns = 0;
-			return fmin;
+			if (max_util < park_thresh) {
+				p->parked = true;
+				return fmin;
+			}
 		}
 
-		if (max_util < park_thresh) {
+		if (max_util < park_thresh && !in_resume_window) {
 			if (++p->park_enter_count >= RFX_D_PARK_ENTER_EVALS) {
 				if (!p->parked) {
 					p->parked = true;
@@ -1420,9 +1462,9 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 				p->filt_util = max_util;
 			}
 		} else {
-			/* On Big/Prime, require genuine demand (>= 25%) to unpark from dormant/parked */
+			/* On Big/Prime, unpark immediately on resume window or genuine demand (>= 15%) */
 			if (!p->is_little && (p->parked || p->dormant)) {
-				if (max_util >= (max_cap / 4)) {
+				if (in_resume_window || max_util >= (max_cap * 15 / 100)) {
 					p->park_enter_count = 0;
 					p->parked = false;
 					p->dormant = false;
@@ -1432,7 +1474,7 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 				p->park_enter_count = 0;
 				p->parked = false;
 				p->park_since_ns = 0;
-				if (p->dormant && max_util >= (max_cap * 35 / 100))
+				if (p->dormant && (in_resume_window || max_util >= (max_cap * 25 / 100)))
 					p->dormant = false;
 			}
 		}
@@ -1597,10 +1639,11 @@ static void rfx_reset_policy_locked(struct rfx_policy *p)
 	p->big_cap_lifted = false;
 	p->little_floor_end_ns = 0;
 	p->little_prev_demand = 0;
-	p->parked = true;
+	p->parked = false;
 	p->dormant = false;
-	p->park_enter_count = RFX_D_PARK_ENTER_EVALS;
+	p->park_enter_count = 0;
 	p->park_since_ns = 0;
+	p->resume_unlock_until_ns = sched_clock() + (1200 * NSEC_PER_MSEC);
 	p->descend_hold_end_ns = 0;
 	p->prev_demand_pct = 0;
 	p->ceil_rise_pct = 100;
@@ -1669,6 +1712,61 @@ static int rfx_pm_notifier(struct notifier_block *nb, unsigned long action,
 static struct notifier_block rfx_pm_nb = {
 	.notifier_call = rfx_pm_notifier,
 };
+
+#ifdef CONFIG_POWERSUSPEND
+static void rfx_screen_suspend(struct power_suspend *h)
+{
+	struct rfx_policy *p;
+	unsigned long flags, pflags;
+
+	WRITE_ONCE(rfx_screen_off, true);
+	smp_wmb();
+	spin_lock_irqsave(&rfx_policy_list_lock, flags);
+	list_for_each_entry(p, &rfx_policy_list, gov_node) {
+		raw_spin_lock_irqsave(&p->update_lock, pflags);
+		p->parked = true;
+		p->dormant = true;
+		p->next_freq = p->policy->min;
+		p->cached_raw_freq = p->policy->min;
+		p->pending_raw_freq = p->policy->min;
+		p->freq_update_delay_ns = (s64)50000 * NSEC_PER_USEC;
+		WRITE_ONCE(p->need_freq_update, true);
+		if (p->policy->fast_switch_enabled)
+			cpufreq_driver_fast_switch(p->policy, p->policy->min);
+		raw_spin_unlock_irqrestore(&p->update_lock, pflags);
+	}
+	spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
+}
+
+static void rfx_screen_resume(struct power_suspend *h)
+{
+	struct rfx_policy *p;
+	unsigned long flags, pflags;
+	u64 now = sched_clock();
+
+	WRITE_ONCE(rfx_screen_off, false);
+	smp_wmb();
+	spin_lock_irqsave(&rfx_policy_list_lock, flags);
+	list_for_each_entry(p, &rfx_policy_list, gov_node) {
+		raw_spin_lock_irqsave(&p->update_lock, pflags);
+		rfx_reset_policy_locked(p);
+		p->parked = false;
+		p->dormant = false;
+		p->park_enter_count = 0;
+		p->park_since_ns = 0;
+		p->resume_unlock_until_ns = now + (1200 * NSEC_PER_MSEC);
+		p->freq_update_delay_ns = (s64)p->tunables->rate_limit_us * NSEC_PER_USEC;
+		WRITE_ONCE(p->need_freq_update, true);
+		raw_spin_unlock_irqrestore(&p->update_lock, pflags);
+	}
+	spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
+}
+
+static struct power_suspend rfx_power_suspend = {
+	.suspend = rfx_screen_suspend,
+	.resume  = rfx_screen_resume,
+};
+#endif
 
 static ssize_t gaming_mode_show(struct gov_attr_set *attr_set, char *buf)
 {
@@ -2309,11 +2407,17 @@ static int __init vorpal_gov_init(void)
 	rfx_selfcheck();
 
 	register_pm_notifier(&rfx_pm_nb);
+#ifdef CONFIG_POWERSUSPEND
+	register_power_suspend(&rfx_power_suspend);
+#endif
 	return cpufreq_register_governor(&vorpal_gov);
 }
 
 static void __exit vorpal_gov_exit(void)
 {
+#ifdef CONFIG_POWERSUSPEND
+	unregister_power_suspend(&rfx_power_suspend);
+#endif
 	unregister_pm_notifier(&rfx_pm_nb);
 	cpufreq_unregister_governor(&vorpal_gov);
 }
