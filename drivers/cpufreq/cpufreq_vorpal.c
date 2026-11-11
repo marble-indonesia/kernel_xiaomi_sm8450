@@ -114,7 +114,7 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_D_DORMANT_ENTER_NS		(1200 * NSEC_PER_MSEC) /* 1.2s quiescent dwell before dormant */
 #define RFX_D_LIGHT_EVAL_OPP_PCT	35	/* Light-load stretch OPP threshold */
 #define RFX_D_LIGHT_EVAL_US		6000	/* Light-load evaluation cadence (6ms) */
-#define RFX_D_PARK_ENTER_EVALS		2	/* Consecutive raw-idle evaluations to park */
+#define RFX_D_PARK_ENTER_EVALS		5	/* Consecutive raw-idle evaluations to park (10ms) */
 #define RFX_D_PARK_UTIL_SHIFT		3	/* 12.5% raw util threshold */
 
 /* Daily cluster caps & sustained-load lift (% of effective ceiling) */
@@ -135,7 +135,7 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_D_LITTLE_FLOOR_PCT		28
 #define RFX_D_LITTLE_FLOOR_ARM_PCT	28
 #define RFX_D_LITTLE_FLOOR_REARM_PCT	10
-#define RFX_D_LITTLE_FLOOR_NS		(12 * NSEC_PER_MSEC)
+#define RFX_D_LITTLE_FLOOR_NS		(24 * NSEC_PER_MSEC)
 
 /* Daily energy-aware round-down on descent */
 #define RFX_D_ENERGY_AWARE		1
@@ -153,28 +153,28 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_ENERGY_AWARE_DEFAULT	0	/* Disable down-rounding in gaming to preserve exact target OPP */
 
 /* Gaming floors (% of effective ceiling) */
-#define RFX_G_PRIME_FLOOR_PCT		30	/* Prime core baseline floor */
-#define RFX_G_BIG_FLOOR_PCT		44	/* Render tier baseline floor */
+#define RFX_G_PRIME_FLOOR_PCT		22	/* Prime core baseline floor (calibrated for SM8450) */
+#define RFX_G_BIG_FLOOR_PCT		38	/* Render tier baseline floor (calibrated for SM8450) */
 #define RFX_G_LITTLE_FLOOR_PCT		25	/* Background cluster floor */
 #define RFX_G_IDLE_FLOOR_PCT		20	/* Gated idle floor */
-#define RFX_G_WARMUP_FLOOR_PCT		65	/* Warmup burst floor */
+#define RFX_G_WARMUP_FLOOR_PCT		56	/* Warmup burst floor */
 
-/* Gaming cluster caps (% of effective ceiling) - Tuned for <=44C thermal equilibrium */
+/* Gaming cluster caps (% of effective ceiling) - Tuned for <=43C thermal equilibrium on SM8450 */
 #define RFX_G_LITTLE_CAP_PCT		60
-#define RFX_G_PRIME_CAP_PCT		54	/* Sustained Prime sweet-spot cap (power efficient, <=44C) */
-#define RFX_G_BIG_CAP_PCT		72	/* Sustained Big render sweet-spot cap */
+#define RFX_G_PRIME_CAP_PCT		45	/* Sustained Prime sweet-spot cap (power efficient, <=43C) */
+#define RFX_G_BIG_CAP_PCT		65	/* Sustained Big render sweet-spot cap */
 
-/* Gaming burst caps (prior to sustained load, <=200ms) */
-#define RFX_G_BIG_BURST_CAP_PCT		85	/* Controlled burst cap (no runaway voltage spike) */
-#define RFX_G_PRIME_BURST_CAP_PCT	74	/* Controlled burst cap */
+/* Gaming burst caps (prior to sustained load, <=120ms) */
+#define RFX_G_BIG_BURST_CAP_PCT		78	/* Controlled burst cap (no runaway voltage spike) */
+#define RFX_G_PRIME_BURST_CAP_PCT	62	/* Controlled burst cap */
 
 /* Gaming sustained thermal pacer */
 #define RFX_G_SUSTAINED_TRIGGER_PCT	72	/* Trigger sustained sweet spot */
 #define RFX_G_SUSTAINED_CLEAR_PCT	45	/* Hysteretic clear */
-#define RFX_G_SUSTAINED_WINDOW_MS	200	/* 200ms burst window before sustained clamping */
+#define RFX_G_SUSTAINED_WINDOW_MS	120	/* 120ms burst window before sustained clamping */
 
 /* Gaming feature defaults */
-#define RFX_G_HISPEED_PCT_DEFAULT	65	/* F1 hispeed render floor */
+#define RFX_G_HISPEED_PCT_DEFAULT	55	/* F1 hispeed render floor */
 #define RFX_G_GO_HISPEED_PCT_DEFAULT	86	/* F1 trigger threshold */
 #define RFX_G_HISPEED_HOLD_US_DEFAULT	6000	/* 6ms burst bridge */
 
@@ -594,7 +594,7 @@ static unsigned long rfx_apply_headroom(unsigned long util, unsigned long max_ca
 	}
 
 	/* Linear interpolation above gate thresholds for daily UI fluidness */
-	gate = little ? 30 : 35;
+	gate = little ? 20 : 22;
 	if (upct <= gate)
 		return util;
 
@@ -1462,9 +1462,17 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 				p->filt_util = max_util;
 			}
 		} else {
-			/* On Big/Prime, unpark immediately on resume window or genuine demand (>= 15%) */
-			if (!p->is_little && (p->parked || p->dormant)) {
-				if (in_resume_window || max_util >= (max_cap * 15 / 100)) {
+			if (p->is_prime && (p->parked || p->dormant)) {
+				/* Prime core (Cortex-X2): unpark ONLY on resume window or heavy demand (>= 45%) */
+				if (in_resume_window || max_util >= (max_cap * 45 / 100)) {
+					p->park_enter_count = 0;
+					p->parked = false;
+					p->dormant = false;
+					p->park_since_ns = 0;
+				}
+			} else if (!p->is_little && (p->parked || p->dormant)) {
+				/* Big cluster (Cortex-A710): unpark on resume window or UI interaction (>= 16%) */
+				if (in_resume_window || max_util >= (max_cap * 16 / 100)) {
 					p->park_enter_count = 0;
 					p->parked = false;
 					p->dormant = false;
