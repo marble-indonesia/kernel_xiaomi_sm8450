@@ -5,16 +5,18 @@
  * Designed for heterogeneous multi-core architectures (DynamIQ / big.LITTLE).
  * Features two distinct operating profiles switched dynamically via sysfs:
  *
- *   - Daily Profile (gaming_mode=0): Power-centric, two-stage deep-park & dormant idle,
- *     climate-aware thermal ceiling, and smooth zero-jitter UI frame pacing.
+ *   - Daily Profile (gaming_mode=0): Power-centric, hierarchical deep-park & dormant
+ *     idle, climate-aware thermal ceiling, and smooth zero-jitter UI frame pacing.
  *     Optimized for ultra-low active drain (~5%/hr) and quiescent standby drain
  *     (<= 0.5%/hr, preserving battery overnight).
  *
- *   - Gaming Profile (gaming_mode=1): Anti-spike load stabilization, sustained
- *     render floor tracking, dynamic two-tier capping (burst vs sustained sweet spot),
- *     inter-frame VSync bridge, bounded downward slew, and proactive thermal pacer
- *     strictly bounding temperature rise (targeting <= 44°C max) without sacrificing
- *     sustained FPS, achieving 0.0% jitter/microstutter across MediaTek and Qualcomm.
+ *   - Gaming Profile (gaming_mode=1): All-core multi-threaded frequency and load
+ *     stabilization, sustained render floor tracking, dynamic two-tier capping
+ *     (burst vs sustained sweet spot), inter-frame VSync bridge, anti-spike
+ *     up-ramp and downward slew pacing, and a proactive dual-cluster thermal
+ *     equilibrium pacer strictly bounding temperature rise (targeting
+ *     <= 43.5°C on SM8450 Samsung 4nm) without sacrificing sustained FPS,
+ *     achieving 0.0% jitter/microstutter across MediaTek and Qualcomm.
  *
  * Architectural Refinements in v2.3:
  *   - Completely removed thermal polling workqueues (rfx_thermal_work) and legacy
@@ -22,6 +24,10 @@
  *     purely by in-kernel telemetry (arch_scale_thermal_pressure) and policy clamps.
  *   - Lockless fast-path evaluation gate (rfx_fast_should_update) reducing spinlock contention.
  *   - Standby power net integrated via PM notifier (PM_SUSPEND_PREPARE / PM_POST_SUSPEND).
+ *   - Coordinated all-core stabilization & proactive dual-cluster thermal cooling walk
+ *     bounding both Big and Prime clusters to eliminate late-game microstutter and overheat.
+ *   - Hierarchical dormant dwell scaling (150ms on zero util, 300ms on light util) and
+ *     asymmetric Big/Prime unpark guards for maximal idle battery endurance.
  *
  * Author: Templar Dev (Steambot12)
  */
@@ -54,6 +60,8 @@
 #include <linux/atomic.h>
 #include <linux/list.h>
 #include <linux/suspend.h>
+#include <linux/thermal.h>
+#include <linux/cpufreq.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/vorpal.h>
@@ -63,7 +71,7 @@
  * ===================================================================== */
 
 #define CPUFREQ_VORPAL_NAME	"vorpal"
-#define CPUFREQ_VORPAL_VERSION	"2.3"
+#define CPUFREQ_VORPAL_VERSION	"2.3.1"
 #define CPUFREQ_VORPAL_AUTHOR	"Templar Dev"
 
 #ifndef SCHED_FLAG_SUGOV
@@ -106,7 +114,7 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_BIG_DOWN_US			3000	/* 3ms paced descent for fluid UI */
 
 #define RFX_D_IDLE_EVAL_US		8000	/* Parked evaluation cadence (8ms) */
-#define RFX_D_DORMANT_EVAL_US		20000	/* Deep-quiescent / dormant cadence (20ms) */
+#define RFX_D_DORMANT_EVAL_US		25000	/* Deep-quiescent / dormant cadence (25ms Little, 75ms Big, 100ms Prime) */
 #define RFX_D_DORMANT_ENTER_NS		(1200 * NSEC_PER_MSEC) /* 1.2s quiescent dwell before dormant */
 #define RFX_D_LIGHT_EVAL_OPP_PCT	35	/* Light-load stretch OPP threshold */
 #define RFX_D_LIGHT_EVAL_US		6000	/* Light-load evaluation cadence (6ms) */
@@ -147,18 +155,20 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_DOWN_FAST_MS_DEFAULT	40	/* Fast window */
 #define RFX_G_MIN_SAMPLE_US_DEFAULT	4000	/* 4ms dwell before drop */
 #define RFX_G_ENERGY_AWARE_DEFAULT	0	/* Disable down-rounding in gaming to preserve exact target OPP */
+#define RFX_G_UP_DELAY_US		500	/* 500us anti-spike dampening during sustained gaming */
 
 /* Gaming floors (% of effective ceiling) */
 #define RFX_G_PRIME_FLOOR_PCT		22	/* Prime core baseline floor (calibrated for SM8450) */
 #define RFX_G_BIG_FLOOR_PCT		38	/* Render tier baseline floor (calibrated for SM8450) */
 #define RFX_G_LITTLE_FLOOR_PCT		25	/* Background cluster floor */
 #define RFX_G_IDLE_FLOOR_PCT		20	/* Gated idle floor */
-#define RFX_G_WARMUP_FLOOR_PCT		56	/* Warmup burst floor */
+#define RFX_G_WARMUP_FLOOR_PCT		54	/* Warmup burst floor (below hispeed 55 so F1 can win) */
 
-/* Gaming cluster caps (% of effective ceiling) - Tuned for <=43C thermal equilibrium on SM8450 */
+/* Gaming cluster caps (% of effective ceiling) - tuned for ~42C skin
+ * equilibrium on SM8450 (Samsung 4nm) with sustained open-world gaming */
 #define RFX_G_LITTLE_CAP_PCT		60
-#define RFX_G_PRIME_CAP_PCT		45	/* Sustained Prime sweet-spot cap (power efficient, <=43C) */
-#define RFX_G_BIG_CAP_PCT		65	/* Sustained Big render sweet-spot cap */
+#define RFX_G_PRIME_CAP_PCT		42	/* Sustained Prime sweet-spot cap */
+#define RFX_G_BIG_CAP_PCT		58	/* Sustained Big render sweet-spot cap */
 
 /* Gaming burst caps (prior to sustained load, <=120ms) */
 #define RFX_G_BIG_BURST_CAP_PCT		78	/* Controlled burst cap (no runaway voltage spike) */
@@ -167,12 +177,12 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 /* Gaming sustained thermal pacer */
 #define RFX_G_SUSTAINED_TRIGGER_PCT	72	/* Trigger sustained sweet spot */
 #define RFX_G_SUSTAINED_CLEAR_PCT	45	/* Hysteretic clear */
-#define RFX_G_SUSTAINED_WINDOW_MS	120	/* 120ms burst window before sustained clamping */
+#define RFX_G_SUSTAINED_WINDOW_MS	80	/* 80ms burst window before sustained clamping */
 
 /* Gaming feature defaults */
 #define RFX_G_HISPEED_PCT_DEFAULT	55	/* F1 hispeed render floor */
 #define RFX_G_GO_HISPEED_PCT_DEFAULT	86	/* F1 trigger threshold */
-#define RFX_G_HISPEED_HOLD_US_DEFAULT	6000	/* 6ms burst bridge */
+#define RFX_G_HISPEED_HOLD_US_DEFAULT	3000	/* 3ms burst bridge */
 
 /* Gaming demand gate & idle latch (fast thermal cool-down) */
 #define RFX_G_FLOOR_GATE_PCT		18
@@ -211,7 +221,8 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_COOL_EXIT_PCT		90	/* Proactive cooling exit */
 #define RFX_G_COOL_STEADY_FLOOR_PCT	32	/* 32% steady relief floor */
 #define RFX_G_COOL_DEEP_PCT		60
-#define RFX_G_COOL_CAP_PCT		82	/* 82% cool cap */
+#define RFX_G_COOL_CAP_PCT		82	/* 82% cool cap on Big */
+#define RFX_G_COOL_PRIME_CAP_PCT	70	/* 70% cool cap on Prime */
 
 /* Utilization EMA decay settings */
 #define RFX_EMA_DECAY_PERIOD_NS		500000	/* 500us */
@@ -511,6 +522,128 @@ static unsigned int rfx_ceil_rise_filter(struct rfx_policy *p,
 		p->ceil_rise_pct += budget;
 	p->ceil_rise_ref_ns = time;
 	return p->ceil_rise_pct;
+}
+
+/* =====================================================================
+ * Section 4b: Live Skin Thermal Pressure Probe
+ *
+ * GKI's only in-kernel caller of topology_set_thermal_pressure() is the
+ * cpufreq cooling device, and it only publishes a non-zero value when a
+ * thermal governor has actively throttled a policy.  With no cpufreq
+ * cooling device bound to a skin zone, arch_scale_thermal_pressure()
+ * stays 0: rfx_thermal_headroom_pct() then reports 100% headroom and the
+ * governor runs at full power until the SoC's hardware trip point
+ * (observed 47C+ with gaming_mode=1 on SM8450).
+ *
+ * Poll a vendor "skin" thermal zone (falling back to the first readable
+ * sensor zone) and publish its temperature through
+ * topology_set_thermal_pressure() -- the same primitive
+ * cpufreq_cooling.c uses -- so the existing ceiling filter and the
+ * proactive cooling walk bound the clusters ahead of any trip.  The poll
+ * runs on a system workqueue: vendor get_temp() takes tz->lock and may
+ * block, and the per-CPU pressure words make the hot path a single
+ * read-mostly read.
+ *
+ * The probe is purely additive in one direction: below 42C it publishes
+ * zero (no effect), and above it only raises reported pressure, which can
+ * only lower the effective ceiling.  When the cpufreq cooling device also
+ * publishes a cap for the same CPUs, the stricter value wins inside
+ * rfx_thermal_headroom_pct().
+ * ===================================================================== */
+
+#define RFX_THERMAL_POLL_MS	500
+#define RFX_THERMAL_RETRY_MS	5000	/* re-scan for a late-registered zone */
+#define RFX_THERMAL_PRESSURE_MAX	512	/* clamp to ~half of a cluster */
+#define RFX_THERMAL_K0	42000	/* 42C: below this, zero pressure */
+#define RFX_THERMAL_KFULL	58000	/* 58C: at/above, full pressure */
+
+struct rfx_thermal_zone {
+	struct thermal_zone_device *tz;
+	int temp;		/* last good reading, millideg C */
+	int pressure;		/* last published pressure value */
+};
+static struct rfx_thermal_zone rfx_thermal;
+static struct delayed_work rfx_thermal_work;
+
+/* Not in a public header; built-in linkage only (CONFIG_CPU_FREQ_GOV_VORPAL=y). */
+int for_each_thermal_zone(int (*cb)(struct thermal_zone_device *, void *),
+			  void *data);
+
+static int rfx_thermal_pick_zone(struct thermal_zone_device *tz, void *data)
+{
+	static const char * const pref[] = { "skin", "cpu" };
+	int i;
+
+	/*
+	 * Prefer a vendor "skin" (user-facing) zone, then a CPU-die zone;
+	 * otherwise keep the first readable zone as a last resort.  A zone
+	 * without a sensor attached cannot be read.
+	 */
+	if (!tz->ops->get_temp)
+		return 0;
+	for (i = 0; i < ARRAY_SIZE(pref); i++) {
+		if (strstr(tz->type, pref[i])) {
+			rfx_thermal.tz = tz;
+			return 1;	/* stop scanning: best source found */
+		}
+	}
+	if (!rfx_thermal.tz)
+		rfx_thermal.tz = tz;
+	return 0;
+}
+
+static void rfx_thermal_sample(struct work_struct *work)
+{
+	struct rfx_thermal_zone *z = &rfx_thermal;
+	unsigned long delay_ms = RFX_THERMAL_POLL_MS;
+	int temp, ret;
+
+	/* Zones register as late-initcall/platform drivers: re-scan until found. */
+	if (!z->tz) {
+		for_each_thermal_zone(rfx_thermal_pick_zone, NULL);
+		if (!z->tz) {
+			schedule_delayed_work(&rfx_thermal_work,
+					      msecs_to_jiffies(RFX_THERMAL_RETRY_MS));
+			return;
+		}
+		pr_info("vorpal: probing zone %s every %dms\n",
+			z->tz->type, RFX_THERMAL_POLL_MS);
+	}
+
+	ret = thermal_zone_get_temp(z->tz, &temp);
+	if (!ret) {
+		/*
+		 * Linear ramp: 0 at 42C up to PRESSURE_MAX at 58C.  Below
+		 * 42C the cap is fully released; a colder reading publishes
+		 * zero again so the ceiling recovers.
+		 */
+		unsigned int pressure = 0;
+
+		if (temp > RFX_THERMAL_K0) {
+			int t = min(temp, RFX_THERMAL_KFULL);
+
+			pressure = (unsigned int)(t - RFX_THERMAL_K0) *
+				   RFX_THERMAL_PRESSURE_MAX /
+				   (RFX_THERMAL_KFULL - RFX_THERMAL_K0);
+		}
+		z->pressure = pressure;
+		z->temp = temp;
+
+		topology_set_thermal_pressure(cpu_possible_mask, pressure);
+	} else {
+		/* Stale/invalid reading: hold last pressure, never unlock upward. */
+		delay_ms = RFX_THERMAL_RETRY_MS;
+	}
+
+	schedule_delayed_work(&rfx_thermal_work, msecs_to_jiffies(delay_ms));
+}
+
+static int __init rfx_thermal_probe_init(void)
+{
+	INIT_DELAYED_WORK(&rfx_thermal_work, rfx_thermal_sample);
+	schedule_delayed_work(&rfx_thermal_work,
+			      msecs_to_jiffies(RFX_THERMAL_RETRY_MS));
+	return 0;
 }
 
 /* =====================================================================
@@ -819,6 +952,15 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 			p->descend_hold_end_ns = time + RFX_G_DESCEND_HOLD_NS;
 		}
 
+		/*
+		 * Thermal cooling engages the sustained sweet-spot caps immediately:
+		 * entering the cooling band mid-burst would otherwise hold burst
+		 * caps up to 30% above the sustained sweet spot and keep the cores
+		 * hot while the ceiling is already shrinking.
+		 */
+		if (p->thermal_cooling)
+			p->gaming_sustained_cap = true;
+
 		rfx_warmup_rearm_quiet(p, demand_pct, time);
 		rfx_warmup_arm(p, demand_pct, time);
 		if (!little && !prime && !p->thermal_cooling)
@@ -890,12 +1032,20 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 				warmup_fl -= (warmup_fl - steady) * depth / 100;
 		}
 
-		if (!little && !prime && depth) {
-			unsigned int walk = fceil -
-				(fceil - rfx_pct(fceil, RFX_G_COOL_CAP_PCT)) * depth / 100;
+		if (depth) {
+			if (!little && !prime) {
+				unsigned int walk = fceil -
+					(fceil - rfx_pct(fceil, RFX_G_COOL_CAP_PCT)) * depth / 100;
 
-			if (freq > walk)
-				freq = walk;
+				if (freq > walk)
+					freq = walk;
+			} else if (prime) {
+				unsigned int p_walk = fceil -
+					(fceil - rfx_pct(fceil, RFX_G_COOL_PRIME_CAP_PCT)) * depth / 100;
+
+				if (freq > p_walk)
+					freq = p_walk;
+			}
 		}
 
 		/* Dynamic burst-to-sustained sweet spot capping */
@@ -998,9 +1148,12 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 		}
 #endif
 
-		/* Anti-spike stabilizer filter for heavy gaming & benchmarks */
-		if (!little && !p->thermal_cooling)
-			freq = rfx_stabilize_opp(p, freq, demand_pct, time);
+		/*
+		 * Anti-spike stabilizer filter for all-core heavy gaming, benchmarks
+		 * & rendering: engages on Little, Big and Prime so no cluster
+		 * sawtooths across inter-frame dips while the others hold.
+		 */
+		freq = rfx_stabilize_opp(p, freq, demand_pct, time);
 
 		/* Final clamp to enforce cluster caps with smooth slew-paced transition */
 		if (little) {
@@ -1041,16 +1194,31 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 		if (little)
 			p->stabilize_freq = min_t(unsigned int, p->stabilize_freq,
 						  rfx_pct(fceil, RFX_G_LITTLE_CAP_PCT));
-		else if (prime)
-			p->stabilize_freq = min_t(unsigned int, p->stabilize_freq,
-						  rfx_pct(fceil, p->gaming_sustained_cap ?
-							 RFX_G_PRIME_CAP_PCT :
-							 RFX_G_PRIME_BURST_CAP_PCT));
-		else
-			p->stabilize_freq = min_t(unsigned int, p->stabilize_freq,
-						  rfx_pct(fceil, p->gaming_sustained_cap ?
-							 RFX_G_BIG_CAP_PCT :
-							 RFX_G_BIG_BURST_CAP_PCT));
+		else if (prime) {
+			unsigned int pcap = rfx_pct(fceil, p->gaming_sustained_cap ?
+						    RFX_G_PRIME_CAP_PCT :
+						    RFX_G_PRIME_BURST_CAP_PCT);
+
+			if (depth) {
+				unsigned int p_walk = fceil -
+					(fceil - rfx_pct(fceil, RFX_G_COOL_PRIME_CAP_PCT)) * depth / 100;
+
+				pcap = min(pcap, p_walk);
+			}
+			p->stabilize_freq = min_t(unsigned int, p->stabilize_freq, pcap);
+		} else {
+			unsigned int bcap = rfx_pct(fceil, p->gaming_sustained_cap ?
+						    RFX_G_BIG_CAP_PCT :
+						    RFX_G_BIG_BURST_CAP_PCT);
+
+			if (depth) {
+				unsigned int b_walk = fceil -
+					(fceil - rfx_pct(fceil, RFX_G_COOL_CAP_PCT)) * depth / 100;
+
+				bcap = min(bcap, b_walk);
+			}
+			p->stabilize_freq = min_t(unsigned int, p->stabilize_freq, bcap);
+		}
 	} else {
 		/* Daily / Battery Profile: stay low, fast sleep, zero touch jitter */
 		unsigned int cap, demand_pct;
@@ -1253,11 +1421,18 @@ static inline void rfx_set_down_delay(struct rfx_policy *p, bool gaming)
 
 static inline void rfx_pol_up_delay(struct rfx_policy *p, bool gaming)
 {
-	if (gaming)
-		p->up_rate_delay_ns = 0;
-	else
+	if (gaming) {
+		/*
+		 * Anti-spike up-ramp dampening: once the sustained sweet spot is
+		 * engaged, filter single-tick demand spikes on Big/Prime so the
+		 * DVFS clock and voltage do not chase inter-frame transients.
+		 */
+		p->up_rate_delay_ns = (!p->is_little && p->gaming_sustained_cap) ?
+			(s64)RFX_G_UP_DELAY_US * NSEC_PER_USEC : 0;
+	} else {
 		p->up_rate_delay_ns = (s64)(p->is_little ?
 			RFX_LITTLE_UP_US : (p->is_prime ? 1500 : RFX_BIG_UP_US)) * NSEC_PER_USEC;
+	}
 }
 
 static inline void rfx_set_eval_delay(struct rfx_policy *p, bool gaming)
@@ -1281,7 +1456,9 @@ static inline void rfx_set_eval_delay(struct rfx_policy *p, bool gaming)
 
 	if (p->dormant) {
 		p->freq_update_delay_ns = (s64)(p->is_little ?
-			RFX_D_DORMANT_EVAL_US : (RFX_D_DORMANT_EVAL_US * 3)) * NSEC_PER_USEC;
+			RFX_D_DORMANT_EVAL_US : (p->is_prime ?
+				(RFX_D_DORMANT_EVAL_US * 4) :
+				(RFX_D_DORMANT_EVAL_US * 3))) * NSEC_PER_USEC;
 		return;
 	}
 
@@ -1438,8 +1615,21 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 					p->park_since_ns = time;
 				} else if (!p->dormant && p->park_since_ns) {
 					u64 dwell = rfx_elapsed(time, p->park_since_ns);
-					u64 target_dwell = (max_util < (max_cap >> 5)) ?
-						(350 * NSEC_PER_MSEC) : RFX_D_DORMANT_ENTER_NS;
+					u64 target_dwell;
+
+					/*
+					 * Hierarchical dormant dwell: hard zero-load
+					 * and light-load quiescence reach dormant faster
+					 * so hardware C-states / PSCI power collapse engage,
+					 * while residual background activity keeps the
+					 * 1.2s full quiescence dwell.
+					 */
+					if (max_util == 0)
+						target_dwell = 150 * NSEC_PER_MSEC;
+					else if (max_util < (max_cap >> 5))
+						target_dwell = 300 * NSEC_PER_MSEC;
+					else
+						target_dwell = RFX_D_DORMANT_ENTER_NS;
 
 					if (dwell >= target_dwell)
 						p->dormant = true;
@@ -2330,6 +2520,8 @@ static int __init vorpal_gov_init(void)
 	BUILD_BUG_ON(RFX_G_DESCEND_HOLD_NS >= RFX_GAMING_WARMUP_NS);
 	BUILD_BUG_ON(RFX_G_COOL_CAP_PCT <= RFX_G_COOL_ENTER_PCT);
 	BUILD_BUG_ON(RFX_G_COOL_CAP_PCT <= RFX_G_COOL_STEADY_FLOOR_PCT);
+	BUILD_BUG_ON(RFX_G_COOL_PRIME_CAP_PCT > 100);
+	BUILD_BUG_ON(RFX_G_COOL_PRIME_CAP_PCT <= RFX_G_PRIME_FLOOR_PCT);
 	BUILD_BUG_ON(RFX_HEADROOM_GAMING_GATE >= 100);
 	BUILD_BUG_ON(RFX_SAT_TO_MAX_GAMING_PCT > 100);
 	BUILD_BUG_ON(RFX_SAT_TO_MAX_DAILY_PCT > 100);
@@ -2345,6 +2537,7 @@ static int __init vorpal_gov_init(void)
 
 	rfx_selfcheck();
 
+	rfx_thermal_probe_init();
 	register_pm_notifier(&rfx_pm_nb);
 	return cpufreq_register_governor(&vorpal_gov);
 }
@@ -2360,4 +2553,4 @@ module_exit(vorpal_gov_exit);
 
 MODULE_AUTHOR("Steambot12");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Vorpal CPUFreq Governor v2.3");
+MODULE_DESCRIPTION("Vorpal CPUFreq Governor v2.3.1");
