@@ -162,11 +162,14 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_IDLE_FLOOR_PCT		20	/* Gated idle floor */
 #define RFX_G_WARMUP_FLOOR_PCT		54	/* Warmup burst floor (below hispeed 55 so F1 can win) */
 
-/* Gaming cluster caps (% of effective ceiling) - tuned for ~42C skin
- * equilibrium on SM8450 (Samsung 4nm) with sustained open-world gaming */
+/* Gaming cluster caps (% of effective ceiling) - tuned for a <=44C skin
+ * ceiling on SM8450 (Samsung 4nm) with sustained heavy gaming; the
+ * thermal ceiling filter and proactive cooling walk trim further when
+ * the 42-58C probe ramp engages, so the cap is the first, not only,
+ * throttle stage. */
 #define RFX_G_LITTLE_CAP_PCT		60
-#define RFX_G_PRIME_CAP_PCT		42	/* Sustained Prime sweet-spot cap */
-#define RFX_G_BIG_CAP_PCT		58	/* Sustained Big render sweet-spot cap */
+#define RFX_G_PRIME_CAP_PCT		38	/* Sustained Prime cap (power efficient) */
+#define RFX_G_BIG_CAP_PCT		52	/* Sustained Big render cap */
 
 /* Gaming burst caps (prior to sustained load, <=120ms) */
 #define RFX_G_BIG_BURST_CAP_PCT		78	/* Controlled burst cap (no runaway voltage spike) */
