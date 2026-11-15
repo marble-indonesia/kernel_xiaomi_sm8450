@@ -253,6 +253,15 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 static atomic_t rfx_gaming = ATOMIC_INIT(0);
 static bool rfx_suspended;
 
+static inline bool rfx_is_screen_off(void)
+{
+#ifdef CONFIG_PM_AUTOSLEEP
+	if (pm_autosleep_state() > PM_SUSPEND_ON)
+		return true;
+#endif
+	return READ_ONCE(rfx_suspended);
+}
+
 static LIST_HEAD(rfx_policy_list);
 static DEFINE_SPINLOCK(rfx_policy_list_lock);
 
@@ -798,11 +807,11 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 	freq = (unsigned int)((u64)pol->cpuinfo.max_freq * util / max_cap);
 	freq = clamp(freq, fmin, fceil);
 
-	if (unlikely(READ_ONCE(rfx_suspended))) {
+	if (unlikely(rfx_is_screen_off())) {
 		if (!little)
 			return fmin;
-		if (freq > rfx_pct(fceil, 38))
-			freq = rfx_pct(fceil, 38);
+		if (freq > rfx_pct(fceil, 35))
+			freq = rfx_pct(fceil, 35);
 	}
 
 	if (gaming) {
@@ -1332,13 +1341,8 @@ static inline void rfx_set_eval_delay(struct rfx_policy *p, bool gaming)
 		return;
 	}
 
-	if (unlikely(READ_ONCE(rfx_suspended))) {
+	if (unlikely(rfx_is_screen_off())) {
 		p->freq_update_delay_ns = (s64)250000 * NSEC_PER_USEC;
-		return;
-	}
-
-	if (p->resume_unlock_until_ns && sched_clock() < p->resume_unlock_until_ns) {
-		p->freq_update_delay_ns = (s64)p->tunables->rate_limit_us * NSEC_PER_USEC;
 		return;
 	}
 
@@ -1476,27 +1480,22 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 					READ_ONCE(p->policy->min));
 		/* Adaptive park threshold: 12.5% across clusters for swift quiescent descent */
 		unsigned long park_thresh = max_cap >> RFX_D_PARK_UTIL_SHIFT;
-		bool is_suspended = READ_ONCE(rfx_suspended);
-		bool in_resume_window = p->resume_unlock_until_ns && time < p->resume_unlock_until_ns;
+		bool screen_off = rfx_is_screen_off();
 
-		/* Suspend Standby: keep Big & Prime hard-parked to fmin */
-		if (unlikely(is_suspended)) {
-			if (!p->is_little) {
-				p->parked = true;
-				p->dormant = true;
-				p->pending_raw_freq = fmin;
-				p->down_rate_delay_ns = 0;
-				return fmin;
-			}
-			/* Little cluster during suspend: park to fmin when under threshold */
+		/* Screen-off / Suspend Standby: keep Big & Prime hard-parked to fmin */
+		if (unlikely(screen_off)) {
+			p->parked = true;
+			p->dormant = true;
 			p->pending_raw_freq = fmin;
-			if (max_util < park_thresh) {
-				p->parked = true;
+			p->down_rate_delay_ns = 0;
+			if (!p->is_little)
 				return fmin;
-			}
+			/* Little cluster during screen-off: park to fmin when under threshold */
+			if (max_util < park_thresh)
+				return fmin;
 		}
 
-		if (max_util < park_thresh && !in_resume_window) {
+		if (max_util < park_thresh) {
 			if (++p->park_enter_count >= RFX_D_PARK_ENTER_EVALS) {
 				if (!p->parked) {
 					p->parked = true;
@@ -1526,8 +1525,8 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 			}
 		} else {
 			if (p->is_prime && (p->parked || p->dormant)) {
-				/* Prime core (Cortex-X2): unpark ONLY on resume window or heavy demand (>= 45%) */
-				if (in_resume_window || max_util >= (max_cap * 45 / 100)) {
+				/* Prime core (Cortex-X2): unpark ONLY on heavy demand (>= 45%) */
+				if (max_util >= (max_cap * 45 / 100)) {
 					p->park_enter_count = 0;
 					p->parked = false;
 					p->dormant = false;
@@ -1535,12 +1534,12 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 				}
 			} else if (!p->is_little && (p->parked || p->dormant)) {
 				/*
-				 * Big cluster: unpark on resume window or significant demand (>= 20%).
+				 * Big cluster: unpark on significant demand (>= 20%).
 				 * During screen-off / standby, light background tasks (syncs, sensors)
 				 * stay confined to Little cores. Big cores remain parked in power-collapse,
 				 * preserving deep sleep battery endurance.
 				 */
-				if (in_resume_window || max_util >= (max_cap * 20 / 100)) {
+				if (max_util >= (max_cap * 20 / 100)) {
 					p->park_enter_count = 0;
 					p->parked = false;
 					p->dormant = false;
@@ -1550,8 +1549,7 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 				p->park_enter_count = 0;
 				p->parked = false;
 				p->park_since_ns = 0;
-				if (p->dormant && (in_resume_window ||
-						max_util >= (max_cap * 25 / 100)))
+				if (p->dormant && max_util >= (max_cap * 25 / 100))
 					p->dormant = false;
 			}
 		}
@@ -1716,11 +1714,11 @@ static void rfx_reset_policy_locked(struct rfx_policy *p)
 	p->big_cap_lifted = false;
 	p->little_floor_end_ns = 0;
 	p->little_prev_demand = 0;
-	p->parked = false;
-	p->dormant = false;
+	p->parked = true;
+	p->dormant = true;
 	p->park_enter_count = 0;
 	p->park_since_ns = 0;
-	p->resume_unlock_until_ns = sched_clock() + (1200 * NSEC_PER_MSEC);
+	p->resume_unlock_until_ns = 0;
 	p->descend_hold_end_ns = 0;
 	p->prev_demand_pct = 0;
 	p->ceil_rise_pct = 100;
