@@ -267,6 +267,8 @@ static DEFINE_SPINLOCK(rfx_policy_list_lock);
 
 static inline bool rfx_gaming_enabled(void)
 {
+	if (unlikely(rfx_is_screen_off()))
+		return false;
 	return atomic_read(&rfx_gaming) != 0;
 }
 
@@ -810,8 +812,9 @@ static unsigned int rfx_target_freq(struct rfx_policy *p, unsigned long util,
 	if (unlikely(rfx_is_screen_off())) {
 		if (!little)
 			return fmin;
-		if (freq > rfx_pct(fceil, 35))
-			freq = rfx_pct(fceil, 35);
+		if (freq > rfx_pct(fceil, 30))
+			freq = rfx_pct(fceil, 30);
+		return clamp(freq, fmin, fceil);
 	}
 
 	if (gaming) {
@@ -1731,6 +1734,11 @@ static void rfx_reset_policy_locked(struct rfx_policy *p)
 	p->stabilize_freq = 0;
 	p->filt_util = 0;
 	p->last_ema_ns = 0;
+	p->next_freq = p->policy->min;
+	p->cached_raw_freq = p->policy->min;
+	p->pending_raw_freq = p->policy->min;
+	if (rfx_is_screen_off())
+		p->freq_update_delay_ns = (s64)250000 * NSEC_PER_USEC;
 	p->need_freq_update = true;
 }
 
