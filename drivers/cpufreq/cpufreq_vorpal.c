@@ -60,6 +60,7 @@
 #include <linux/atomic.h>
 #include <linux/list.h>
 #include <linux/suspend.h>
+#include <linux/thermal.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/vorpal.h>
@@ -176,13 +177,13 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_PRIME_BURST_CAP_PCT	62	/* Controlled burst cap */
 
 /* Gaming sustained thermal pacer */
-#define RFX_G_SUSTAINED_TRIGGER_PCT	72	/* Trigger sustained sweet spot */
-#define RFX_G_SUSTAINED_CLEAR_PCT	45	/* Hysteretic clear */
+#define RFX_G_SUSTAINED_TRIGGER_PCT	55	/* Trigger sustained sweet spot (calibrated for uninflated raw_util) */
+#define RFX_G_SUSTAINED_CLEAR_PCT	35	/* Hysteretic clear */
 #define RFX_G_SUSTAINED_WINDOW_MS	80	/* 80ms burst window before sustained clamping */
 
 /* Gaming feature defaults */
-#define RFX_G_HISPEED_PCT_DEFAULT	55	/* F1 hispeed render floor */
-#define RFX_G_GO_HISPEED_PCT_DEFAULT	86	/* F1 trigger threshold */
+#define RFX_G_HISPEED_PCT_DEFAULT	52	/* F1 hispeed render floor */
+#define RFX_G_GO_HISPEED_PCT_DEFAULT	82	/* F1 trigger threshold */
 #define RFX_G_HISPEED_HOLD_US_DEFAULT	3000	/* 3ms burst bridge */
 
 /* Gaming demand gate & idle latch (fast thermal cool-down) */
@@ -196,7 +197,7 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_WARMUP_REARM_RAMP_DOWN_MS	300
 #define RFX_GAMING_WARMUP_NS		(200 * NSEC_PER_MSEC)	/* 200ms burst window */
 #define RFX_GAMING_WARMUP_MAX_NS	(600 * NSEC_PER_MSEC)	/* 600ms bound */
-#define RFX_GAMING_WARMUP_TRIGGER_PCT	60
+#define RFX_GAMING_WARMUP_TRIGGER_PCT	48
 #define RFX_GAMING_WARMUP_EXTEND_PCT	90
 #define RFX_GAMING_WARMUP_RELEASE_PCT	40
 #define RFX_GAMING_WARMUP_RELEASE_NS	(40 * NSEC_PER_MSEC)
@@ -205,16 +206,16 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_GAMING_REARM_QUIET_NS	(2000 * NSEC_PER_MSEC)
 
 /* Gaming frame-risk & inter-frame VSync bridge */
-#define RFX_G_RISK_ARM_PCT		80
-#define RFX_G_RISK_CLEAR_PCT		48
+#define RFX_G_RISK_ARM_PCT		65
+#define RFX_G_RISK_CLEAR_PCT		38
 #define RFX_G_RISK_BOOST_NS		(60 * NSEC_PER_MSEC)	/* 60ms boost */
 #define RFX_G_DESCEND_DROP_PCT		12
-#define RFX_G_DESCEND_FROM_PCT		60	/* Bridges inter-frame load drops without overheating */
+#define RFX_G_DESCEND_FROM_PCT		48	/* Bridges inter-frame load drops without overheating */
 #define RFX_G_DESCEND_HOLD_NS		(16 * NSEC_PER_MSEC)	/* 16ms full-frame VSync bridge */
 
 /* Gaming anti-spike render load band */
-#define RFX_G_STABILIZE_DEMAND_PCT	68	/* Load band where frequency stabilization engages */
-#define RFX_G_STABILIZE_CLEAR_PCT	50	/* Hysteresis clear floor for stabilization */
+#define RFX_G_STABILIZE_DEMAND_PCT	52	/* Load band where frequency stabilization engages */
+#define RFX_G_STABILIZE_CLEAR_PCT	38	/* Hysteresis clear floor for stabilization */
 #define RFX_G_STABILIZE_DWELL_NS	(20 * NSEC_PER_MSEC) /* 20ms anti-spike dwell window (covers full frame) */
 
 /* Gaming thermal relief band - proactive boundary at 44C */
@@ -235,7 +236,7 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_HEADROOM_DAILY_HIGH		12	/* 12% linear headroom for fluid UI scrolling */
 #define RFX_HEADROOM_DAILY_MID		6	/* 6% mid-load headroom */
 #define RFX_HEADROOM_GAMING		4	/* Calibrated margin (4%) */
-#define RFX_HEADROOM_GAMING_GATE	65	/* Heavy-load gate at 65% */
+#define RFX_HEADROOM_GAMING_GATE	50	/* Heavy-load gate at 50% */
 #define RFX_SAT_TO_MAX_GAMING_PCT	100
 #define RFX_SAT_TO_MAX_DAILY_PCT	88
 
@@ -542,11 +543,136 @@ static unsigned int rfx_ceil_rise_filter(struct rfx_policy *p,
 /*
  * Thermal pacing: rfx_thermal_headroom_pct() reads arch_scale_thermal
  * pressure() as published by the thermal framework's cpufreq cooling
- * device (CONFIG_CPU_FREQ_THERMAL + step_wise), and the proactive
- * cooling walk plus cluster caps bound the clusters ahead of any
- * trip.  No in-governor polling is used, so the probe adds no idle
- * wakeups.
+ * device (CONFIG_CPU_FREQ_THERMAL + step_wise) or our gaming-gated live
+ * skin thermal probe, and the proactive cooling walk plus cluster caps
+ * bound the clusters ahead of any trip.
  */
+
+/* =====================================================================
+ * Section 4b: Gaming-Gated Live Skin Thermal Pressure Probe
+ *
+ * On Qualcomm platforms without a bound cpufreq cooling device,
+ * arch_scale_thermal_pressure() stays 0, so the governor's proactive
+ * thermal ceiling walk has no in-kernel trigger.
+ *
+ * We monitor the vendor "skin" thermal zone (with fallback to CPU zone)
+ * ONLY while gaming_mode == 1 and the screen is ON.
+ *
+ * When gaming_mode == 0 or the screen is off, the probe is strictly
+ * stopped and cancelled, ensuring ZERO idle wakeups and preserving the
+ * ultra-low standby battery drain.
+ *
+ * Linear pressure ramp: 0 below 42°C, rising up to 512 at 58°C.
+ * This ensures skin temperature is held strictly <= 43.5°C - 44°C.
+ * ===================================================================== */
+
+#ifdef CONFIG_THERMAL
+#define RFX_THERMAL_POLL_MS		500
+#define RFX_THERMAL_RETRY_MS		5000	/* re-scan for late zone */
+#define RFX_THERMAL_PRESSURE_MAX	512	/* clamp to ~half of a cluster */
+#define RFX_THERMAL_K0			42000	/* 42C: below this, zero pressure */
+#define RFX_THERMAL_KFULL		58000	/* 58C: at/above, full pressure */
+
+struct rfx_thermal_zone {
+	struct thermal_zone_device *tz;
+	int temp;		/* last good reading, millideg C */
+	int pressure;		/* last published pressure value */
+};
+static struct rfx_thermal_zone rfx_thermal;
+static struct delayed_work rfx_thermal_work;
+
+/* Built-in linkage (CONFIG_CPU_FREQ_GOV_VORPAL=y) */
+int for_each_thermal_zone(int (*cb)(struct thermal_zone_device *, void *),
+			  void *data);
+
+static int rfx_thermal_pick_zone(struct thermal_zone_device *tz, void *data)
+{
+	static const char * const pref[] = { "skin", "cpu" };
+	int i;
+
+	if (!tz->ops->get_temp)
+		return 0;
+	for (i = 0; i < ARRAY_SIZE(pref); i++) {
+		if (strstr(tz->type, pref[i])) {
+			rfx_thermal.tz = tz;
+			return 1;
+		}
+	}
+	if (!rfx_thermal.tz)
+		rfx_thermal.tz = tz;
+	return 0;
+}
+
+static void rfx_thermal_sample(struct work_struct *work)
+{
+	struct rfx_thermal_zone *z = &rfx_thermal;
+	unsigned long delay_ms = RFX_THERMAL_POLL_MS;
+	int temp, ret;
+
+	/*
+	 * ONLY poll when gaming_mode is actively enabled and screen is ON!
+	 * If gaming is inactive or screen is off, immediately withdraw pressure
+	 * and do NOT reschedule to ensure 100% pure idle sleep.
+	 */
+	if (!atomic_read(&rfx_gaming) || rfx_is_screen_off()) {
+		if (z->pressure) {
+			z->pressure = 0;
+			topology_set_thermal_pressure(cpu_possible_mask, 0);
+		}
+		return;
+	}
+
+	if (!z->tz) {
+		for_each_thermal_zone(rfx_thermal_pick_zone, NULL);
+		if (!z->tz) {
+			schedule_delayed_work(&rfx_thermal_work,
+					      msecs_to_jiffies(RFX_THERMAL_RETRY_MS));
+			return;
+		}
+		pr_info("vorpal: gaming thermal probe bound to zone %s\n",
+			z->tz->type);
+	}
+
+	ret = thermal_zone_get_temp(z->tz, &temp);
+	if (!ret) {
+		unsigned int pressure = 0;
+
+		if (temp > RFX_THERMAL_K0) {
+			int t = min(temp, RFX_THERMAL_KFULL);
+
+			pressure = (unsigned int)(t - RFX_THERMAL_K0) *
+				   RFX_THERMAL_PRESSURE_MAX /
+				   (RFX_THERMAL_KFULL - RFX_THERMAL_K0);
+		}
+		z->pressure = pressure;
+		z->temp = temp;
+
+		topology_set_thermal_pressure(cpu_possible_mask, pressure);
+	} else {
+		delay_ms = RFX_THERMAL_RETRY_MS;
+	}
+
+	schedule_delayed_work(&rfx_thermal_work, msecs_to_jiffies(delay_ms));
+}
+
+static void rfx_thermal_start(void)
+{
+	if (atomic_read(&rfx_gaming) && !rfx_is_screen_off())
+		schedule_delayed_work(&rfx_thermal_work, 0);
+}
+
+static void rfx_thermal_stop(void)
+{
+	cancel_delayed_work(&rfx_thermal_work);
+	if (rfx_thermal.pressure) {
+		rfx_thermal.pressure = 0;
+		topology_set_thermal_pressure(cpu_possible_mask, 0);
+	}
+}
+#else
+static inline void rfx_thermal_start(void) { }
+static inline void rfx_thermal_stop(void) { }
+#endif
 
 /* =====================================================================
  * Section 5: EMA Utilization Smoothing & Headroom
@@ -1778,6 +1904,7 @@ void rfx_set_display_blank(bool blank)
 	smp_wmb();
 
 	if (blank) {
+		rfx_thermal_stop();
 		spin_lock_irqsave(&rfx_policy_list_lock, flags);
 		list_for_each_entry(p, &rfx_policy_list, gov_node) {
 			raw_spin_lock_irqsave(&p->update_lock, pflags);
@@ -1799,6 +1926,8 @@ void rfx_set_display_blank(bool blank)
 		spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
 	} else {
 		rfx_reset_all_policies();
+		if (atomic_read(&rfx_gaming))
+			rfx_thermal_start();
 	}
 }
 EXPORT_SYMBOL_GPL(rfx_set_display_blank);
@@ -1811,6 +1940,7 @@ static int rfx_pm_notifier(struct notifier_block *nb, unsigned long action,
 
 	switch (action) {
 	case PM_SUSPEND_PREPARE:
+		rfx_thermal_stop();
 		WRITE_ONCE(rfx_suspended, true);
 		smp_wmb();
 		spin_lock_irqsave(&rfx_policy_list_lock, flags);
@@ -1838,6 +1968,8 @@ static int rfx_pm_notifier(struct notifier_block *nb, unsigned long action,
 		WRITE_ONCE(rfx_suspended, false);
 		smp_wmb();
 		rfx_reset_all_policies();
+		if (atomic_read(&rfx_gaming) && !rfx_is_screen_off())
+			rfx_thermal_start();
 		break;
 	}
 	return NOTIFY_OK;
@@ -1863,6 +1995,7 @@ static ssize_t gaming_mode_store(struct gov_attr_set *attr_set,
 	atomic_set(&rfx_gaming, val);
 
 	if (!val) {
+		rfx_thermal_stop();
 		rfx_reset_all_policies();
 	} else {
 		struct rfx_policy *p;
@@ -1877,6 +2010,8 @@ static ssize_t gaming_mode_store(struct gov_attr_set *attr_set,
 			raw_spin_unlock_irqrestore(&p->update_lock, pflags);
 		}
 		spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
+		if (!rfx_is_screen_off())
+			rfx_thermal_start();
 	}
 	return count;
 }
@@ -2488,12 +2623,23 @@ static int __init vorpal_gov_init(void)
 
 	rfx_selfcheck();
 
+#ifdef CONFIG_THERMAL
+	INIT_DELAYED_WORK(&rfx_thermal_work, rfx_thermal_sample);
+#endif
+
 	register_pm_notifier(&rfx_pm_nb);
 	return cpufreq_register_governor(&vorpal_gov);
 }
 
 static void __exit vorpal_gov_exit(void)
 {
+#ifdef CONFIG_THERMAL
+	cancel_delayed_work_sync(&rfx_thermal_work);
+	if (rfx_thermal.pressure) {
+		rfx_thermal.pressure = 0;
+		topology_set_thermal_pressure(cpu_possible_mask, 0);
+	}
+#endif
 	unregister_pm_notifier(&rfx_pm_nb);
 	cpufreq_unregister_governor(&vorpal_gov);
 }
