@@ -1513,9 +1513,9 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 					 * 1.2s full quiescence dwell.
 					 */
 					if (max_util == 0)
-						target_dwell = 150 * NSEC_PER_MSEC;
+						target_dwell = 50 * NSEC_PER_MSEC;
 					else if (max_util < (max_cap >> 5))
-						target_dwell = 300 * NSEC_PER_MSEC;
+						target_dwell = 100 * NSEC_PER_MSEC;
 					else
 						target_dwell = RFX_D_DORMANT_ENTER_NS;
 
@@ -1535,17 +1535,12 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 				}
 			} else if (!p->is_little && (p->parked || p->dormant)) {
 				/*
-				 * Big cluster: unpark on resume window or UI
-				 * interaction. A single touch-down sample spikes
-				 * per-CPU util but policy-wide max stays below
-				 * 16% for ~2 evals, and up-rate-limit (300us on
-				 * Big) then stretches the rise to ~5ms -- the
-				 * lockscreen/control-center stutter. 8% unparks
-				 * on the first sample after a tap; little keeps
-				 * the strict 12.5% park threshold for its idle
-				 * path, so battery cost is bounded.
+				 * Big cluster: unpark on resume window or significant demand (>= 20%).
+				 * During screen-off / standby, light background tasks (syncs, sensors)
+				 * stay confined to Little cores. Big cores remain parked in power-collapse,
+				 * preserving deep sleep battery endurance.
 				 */
-				if (in_resume_window || max_util >= (max_cap * 8 / 100)) {
+				if (in_resume_window || max_util >= (max_cap * 20 / 100)) {
 					p->park_enter_count = 0;
 					p->parked = false;
 					p->dormant = false;
@@ -1776,8 +1771,12 @@ static int rfx_pm_notifier(struct notifier_block *nb, unsigned long action,
 			p->pending_raw_freq = p->policy->min;
 			p->freq_update_delay_ns = (s64)250000 * NSEC_PER_USEC;
 			WRITE_ONCE(p->need_freq_update, true);
-			if (p->policy->fast_switch_enabled)
+			if (p->policy->fast_switch_enabled) {
 				cpufreq_driver_fast_switch(p->policy, p->policy->min);
+			} else if (!p->work_in_progress) {
+				p->work_in_progress = true;
+				irq_work_queue(&p->irq_work);
+			}
 			raw_spin_unlock_irqrestore(&p->update_lock, pflags);
 		}
 		spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
