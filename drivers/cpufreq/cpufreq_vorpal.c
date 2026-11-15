@@ -252,9 +252,12 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 
 static atomic_t rfx_gaming = ATOMIC_INIT(0);
 static bool rfx_suspended;
+static bool rfx_display_off;
 
 static inline bool rfx_is_screen_off(void)
 {
+	if (READ_ONCE(rfx_display_off))
+		return true;
 #ifdef CONFIG_PM_AUTOSLEEP
 	if (pm_autosleep_state() > PM_SUSPEND_ON)
 		return true;
@@ -1227,9 +1230,9 @@ static void rfx_iowait_boost(struct rfx_cpu *rfx_c, u64 time, unsigned int flags
 	bool set = flags & SCHED_CPUFREQ_IOWAIT;
 	unsigned int cap;
 
-	/* Only boost Little cluster when active; bypass Big/Prime and dormant/parked states */
+	/* Only boost Little cluster when active; bypass Big/Prime, dormant/parked states, and zero-task idle */
 	if (!rfx_c->rfx_policy->is_little || rfx_c->rfx_policy->dormant ||
-	    rfx_c->rfx_policy->parked) {
+	    rfx_c->rfx_policy->parked || !rfx_c->util) {
 		rfx_c->iowait_boost = 0;
 		rfx_c->iowait_boost_pending = false;
 		return;
@@ -1499,7 +1502,8 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 		}
 
 		if (max_util < park_thresh) {
-			if (++p->park_enter_count >= RFX_D_PARK_ENTER_EVALS) {
+			/* Fast park: on deep idle (< 6.25%) park immediately; otherwise require 2 evals */
+			if (max_util < (max_cap >> 4) || ++p->park_enter_count >= 2) {
 				if (!p->parked) {
 					p->parked = true;
 					p->park_since_ns = time;
@@ -1508,18 +1512,17 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 					u64 target_dwell;
 
 					/*
-					 * Hierarchical dormant dwell: hard zero-load
-					 * and light-load quiescence reach dormant faster
-					 * so hardware C-states / PSCI power collapse engage,
-					 * while residual background activity keeps the
-					 * 1.2s full quiescence dwell.
+					 * Rapid dormant transition: zero-load enters dormant
+					 * in 10ms, light quiescence in 25ms, allowing hardware
+					 * C-states / PSCI power collapse to engage swiftly
+					 * during AOD and screen-off idle.
 					 */
 					if (max_util == 0)
-						target_dwell = 50 * NSEC_PER_MSEC;
+						target_dwell = 10 * NSEC_PER_MSEC;
 					else if (max_util < (max_cap >> 5))
-						target_dwell = 100 * NSEC_PER_MSEC;
+						target_dwell = 25 * NSEC_PER_MSEC;
 					else
-						target_dwell = RFX_D_DORMANT_ENTER_NS;
+						target_dwell = 100 * NSEC_PER_MSEC;
 
 					if (dwell >= target_dwell)
 						p->dormant = true;
@@ -1528,25 +1531,32 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 			}
 		} else {
 			if (p->is_prime && (p->parked || p->dormant)) {
-				/* Prime core (Cortex-X2): unpark ONLY on heavy demand (>= 45%) */
+				/* Prime core (Cortex-X2): unpark ONLY on sustained heavy demand (>= 45% for 2 evals) */
 				if (max_util >= (max_cap * 45 / 100)) {
+					if (++p->park_enter_count >= 2) {
+						p->park_enter_count = 0;
+						p->parked = false;
+						p->dormant = false;
+						p->park_since_ns = 0;
+					}
+				} else {
 					p->park_enter_count = 0;
-					p->parked = false;
-					p->dormant = false;
-					p->park_since_ns = 0;
 				}
 			} else if (!p->is_little && (p->parked || p->dormant)) {
 				/*
-				 * Big cluster: unpark on significant demand (>= 20%).
-				 * During screen-off / standby, light background tasks (syncs, sensors)
-				 * stay confined to Little cores. Big cores remain parked in power-collapse,
-				 * preserving deep sleep battery endurance.
+				 * Big cluster: unpark ONLY on sustained demand (>= 25% for 2 evals).
+				 * Single-eval transient spikes (AOD updates, timer noise) do not
+				 * unpark Big cores, keeping them in power-collapse.
 				 */
-				if (max_util >= (max_cap * 20 / 100)) {
+				if (max_util >= (max_cap * 25 / 100)) {
+					if (++p->park_enter_count >= 2) {
+						p->park_enter_count = 0;
+						p->parked = false;
+						p->dormant = false;
+						p->park_since_ns = 0;
+					}
+				} else {
 					p->park_enter_count = 0;
-					p->parked = false;
-					p->dormant = false;
-					p->park_since_ns = 0;
 				}
 			} else {
 				p->park_enter_count = 0;
@@ -1755,6 +1765,43 @@ static void rfx_reset_all_policies(void)
 	}
 	spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
 }
+
+void rfx_set_display_blank(bool blank)
+{
+	struct rfx_policy *p;
+	unsigned long flags, pflags;
+
+	if (READ_ONCE(rfx_display_off) == blank)
+		return;
+
+	WRITE_ONCE(rfx_display_off, blank);
+	smp_wmb();
+
+	if (blank) {
+		spin_lock_irqsave(&rfx_policy_list_lock, flags);
+		list_for_each_entry(p, &rfx_policy_list, gov_node) {
+			raw_spin_lock_irqsave(&p->update_lock, pflags);
+			p->parked = true;
+			p->dormant = true;
+			p->next_freq = p->policy->min;
+			p->cached_raw_freq = p->policy->min;
+			p->pending_raw_freq = p->policy->min;
+			p->freq_update_delay_ns = (s64)250000 * NSEC_PER_USEC;
+			WRITE_ONCE(p->need_freq_update, true);
+			if (p->policy->fast_switch_enabled) {
+				cpufreq_driver_fast_switch(p->policy, p->policy->min);
+			} else if (!p->work_in_progress) {
+				p->work_in_progress = true;
+				irq_work_queue(&p->irq_work);
+			}
+			raw_spin_unlock_irqrestore(&p->update_lock, pflags);
+		}
+		spin_unlock_irqrestore(&rfx_policy_list_lock, flags);
+	} else {
+		rfx_reset_all_policies();
+	}
+}
+EXPORT_SYMBOL_GPL(rfx_set_display_blank);
 
 static int rfx_pm_notifier(struct notifier_block *nb, unsigned long action,
 			   void *data)
