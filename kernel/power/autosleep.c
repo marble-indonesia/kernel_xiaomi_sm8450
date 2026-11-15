@@ -81,6 +81,7 @@ suspend_state_t pm_autosleep_state(void)
 {
 	return autosleep_state;
 }
+EXPORT_SYMBOL_GPL(pm_autosleep_state);
 
 int pm_autosleep_lock(void)
 {
