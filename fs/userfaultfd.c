@@ -1472,9 +1472,9 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 
 	ret = 0;
 	do {
-		const bool any_mode_removed = vma->vm_flags &
-			(VM_UFFD_MISSING | VM_UFFD_WP) & ~vm_flags;
-
+		struct userfaultfd_ctx *cur_uffd_ctx =
+				rcu_dereference_protected(vma->vm_userfaultfd_ctx.ctx,
+							  lockdep_is_held(&mm->mmap_lock));
 		cond_resched();
 
 		BUG_ON(!vma_can_userfault(vma, vm_flags));
@@ -1485,9 +1485,8 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 		 * Nothing to do: this vma is already registered into this
 		 * userfaultfd and with the right tracking mode too.
 		 */
-		if (vma->vm_userfaultfd_ctx.ctx == ctx &&
-		    (vma->vm_flags & (VM_UFFD_MISSING | VM_UFFD_WP)) ==
-		    vm_flags)
+		if (cur_uffd_ctx == ctx &&
+		    (vma->vm_flags & vm_flags) == vm_flags)
 			goto skip;
 
 		if (vma->vm_start > start)
@@ -1527,16 +1526,6 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 
 		if (is_vm_hugetlb_page(vma) && uffd_disable_huge_pmd_share(vma))
 			hugetlb_unshare_all_pmds(vma);
-
-		/* Retry faults for removed modes while the VMA is write-locked. */
-		if (any_mode_removed) {
-			struct userfaultfd_wake_range range = {
-				.start = start,
-				.len = vma_end - start,
-			};
-
-			wake_userfault(ctx, &range);
-		}
 
 	skip:
 		prev = vma;

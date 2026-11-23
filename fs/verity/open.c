@@ -222,92 +222,11 @@ static bool validate_fsverity_descriptor(struct inode *inode,
 					 const struct fsverity_descriptor *desc,
 					 size_t desc_size)
 {
-	if (desc->version != 1) {
-		fsverity_err(inode, "Unrecognized descriptor version: %u",
-			     desc->version);
+	if (desc_size < sizeof(*desc)) {
+		fsverity_err(inode, "Unrecognized descriptor size: %zu bytes",
+			     desc_size);
 		return false;
 	}
-
-	if (memchr_inv(desc->__reserved, 0, sizeof(desc->__reserved))) {
-		fsverity_err(inode, "Reserved bits set in descriptor");
-		return false;
-	}
-
-	if (desc->salt_size > sizeof(desc->salt)) {
-		fsverity_err(inode, "Invalid salt_size: %u", desc->salt_size);
-		return false;
-	}
-
-	if (le64_to_cpu(desc->data_size) != inode->i_size) {
-		fsverity_err(inode,
-			     "Wrong data_size: %llu (desc) != %lld (inode)",
-			     le64_to_cpu(desc->data_size), inode->i_size);
-		return false;
-	}
-
-	if (le32_to_cpu(desc->sig_size) > desc_size - sizeof(*desc)) {
-		fsverity_err(inode, "Signature overflows verity descriptor");
-		return false;
-	}
-
-	return true;
-}
-
-/*
- * Read the inode's fsverity_descriptor (with optional appended signature) from
- * the filesystem, and do basic validation of it.
- */
-int fsverity_get_descriptor(struct inode *inode,
-			    struct fsverity_descriptor **desc_ret,
-			    size_t *desc_size_ret)
-{
-	int size, res;
-	struct fsverity_descriptor *desc;
-
-	size = inode->i_sb->s_vop->get_verity_descriptor(inode, NULL, 0);
-	if (size < 0) {
-		fsverity_err(inode, "Error %d getting verity descriptor size",
-			     size);
-		return size;
-	}
-	if (size < sizeof(*desc) || size > FS_VERITY_MAX_DESCRIPTOR_SIZE) {
-		fsverity_err(inode,
-			     "Verity descriptor has invalid size (%d bytes)",
-			     size);
-		return -EMSGSIZE;
-	}
-	desc = kmalloc(size, GFP_KERNEL);
-	if (!desc)
-		return -ENOMEM;
-	res = inode->i_sb->s_vop->get_verity_descriptor(inode, desc, size);
-	if (res < 0) {
-		fsverity_err(inode, "Error %d reading verity descriptor", res);
-		kfree(desc);
-		return res;
-	}
-	if (res != size) {
-		fsverity_err(inode, "Verity descriptor size changed (%d => %d)",
-			     size, res);
-		kfree(desc);
-		return -EINVAL;
-	}
-	if (!validate_fsverity_descriptor(inode, desc, size)) {
-		kfree(desc);
-		return -EINVAL;
-	}
-
-	*desc_ret = desc;
-	*desc_size_ret = res;
-	return 0;
-}
-
-/* Ensure the inode has an ->i_verity_info */
-static int ensure_verity_info(struct inode *inode)
-{
-	struct fsverity_info *vi = fsverity_get_info(inode);
-	struct fsverity_descriptor *desc;
-	size_t desc_size;
-	int err;
 
 	if (desc->version != 1) {
 		fsverity_err(inode, "Unrecognized descriptor version: %u",
@@ -350,6 +269,48 @@ int fsverity_get_descriptor(struct inode *inode,
 {
 	int res;
 	struct fsverity_descriptor *desc;
+
+	res = inode->i_sb->s_vop->get_verity_descriptor(inode, NULL, 0);
+	if (res < 0) {
+		fsverity_err(inode,
+			     "Error %d getting verity descriptor size", res);
+		return res;
+	}
+	if (res > FS_VERITY_MAX_DESCRIPTOR_SIZE) {
+		fsverity_err(inode, "Verity descriptor is too large (%d bytes)",
+			     res);
+		return -EMSGSIZE;
+	}
+	desc = kmalloc(res, GFP_KERNEL);
+	if (!desc)
+		return -ENOMEM;
+	res = inode->i_sb->s_vop->get_verity_descriptor(inode, desc, res);
+	if (res < 0) {
+		fsverity_err(inode, "Error %d reading verity descriptor", res);
+		kfree(desc);
+		return res;
+	}
+
+	if (!validate_fsverity_descriptor(inode, desc, res)) {
+		kfree(desc);
+		return -EINVAL;
+	}
+
+	*desc_ret = desc;
+	*desc_size_ret = res;
+	return 0;
+}
+
+/* Ensure the inode has an ->i_verity_info */
+static int ensure_verity_info(struct inode *inode)
+{
+	struct fsverity_info *vi = fsverity_get_info(inode);
+	struct fsverity_descriptor *desc;
+	size_t desc_size;
+	int err;
+
+	if (vi)
+		return 0;
 
 	err = fsverity_get_descriptor(inode, &desc, &desc_size);
 	if (err)
