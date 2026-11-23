@@ -79,18 +79,6 @@ static void sugov_update_rate_limit_us(struct sugov_policy *sg_policy)
 		(s64)sg_policy->tunables->rate_limit_us * NSEC_PER_USEC;
 }
 
-static void sugov_update_rate_limit_us_sync(struct sugov_policy *sg_policy)
-{
-	/*
-	 * Serialize with rate_limit_us_store() to prevent this path from using
-	 * a stale rate limit tunable value to set the limit for the given
-	 * policy.
-	 */
-	guard(mutex)(&sg_policy->tunables->attr_set.update_lock);
-
-	sugov_update_rate_limit_us(sg_policy);
-}
-
 static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 {
 	s64 delta_ns;
@@ -477,33 +465,13 @@ static inline bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu) { return false; }
 #endif /* CONFIG_NO_HZ_COMMON */
 
 /*
- * BACKPORT (Linux 6.12):
- * Make sugov_should_update_freq() ignore the rate limit when DL/RT,
- * iowait boost, or latency-sensitive/boosted tasks request higher
- * CPU capacity. Prevents frame drops and UI jitter by allowing
- * immediate frequency ramp-up.
+ * Make sugov_should_update_freq() ignore the rate limit when DL
+ * has increased the utilization.
  */
-static inline void ignore_rate_limit_latency_sensitive(struct sugov_cpu *sg_cpu,
-						       struct sugov_policy *sg_policy,
-						       unsigned int flags)
+static inline void ignore_dl_rate_limit(struct sugov_cpu *sg_cpu, struct sugov_policy *sg_policy)
 {
-	struct rq *rq = cpu_rq(sg_cpu->cpu);
-
-	if (cpu_bw_dl(rq) > sg_cpu->bw_dl) {
+	if (cpu_bw_dl(cpu_rq(sg_cpu->cpu)) > sg_cpu->bw_dl)
 		WRITE_ONCE(sg_policy->limits_changed, true);
-		return;
-	}
-
-	if ((flags & SCHED_CPUFREQ_IOWAIT) || (rq->rt.rt_nr_running > 0)) {
-		WRITE_ONCE(sg_policy->limits_changed, true);
-		return;
-	}
-
-	if (uclamp_is_used() && rq->curr &&
-	    (uclamp_latency_sensitive(rq->curr) || uclamp_boosted(rq->curr))) {
-		WRITE_ONCE(sg_policy->limits_changed, true);
-		return;
-	}
 }
 
 static void sugov_update_single(struct update_util_data *hook, u64 time,
@@ -517,7 +485,7 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	sugov_iowait_boost(sg_cpu, time, flags);
 	sg_cpu->last_update = time;
 
-	ignore_rate_limit_latency_sensitive(sg_cpu, sg_policy, flags);
+	ignore_dl_rate_limit(sg_cpu, sg_policy);
 
 	if (!sugov_should_update_freq(sg_policy, time))
 		return;
@@ -588,7 +556,7 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 	sugov_iowait_boost(sg_cpu, time, flags);
 	sg_cpu->last_update = time;
 
-	ignore_rate_limit_latency_sensitive(sg_cpu, sg_policy, flags);
+	ignore_dl_rate_limit(sg_cpu, sg_policy);
 
 	if (sugov_should_update_freq(sg_policy, time)) {
 		next_f = sugov_next_freq_shared(sg_cpu, time);
@@ -897,7 +865,7 @@ static int sugov_start(struct cpufreq_policy *policy)
 	struct sugov_policy *sg_policy = policy->governor_data;
 	unsigned int cpu;
 
-	sugov_update_rate_limit_us_sync(sg_policy);
+	sugov_update_rate_limit_us(sg_policy);
 	sg_policy->last_freq_update_time	= 0;
 	sg_policy->next_freq			= 0;
 	sg_policy->work_in_progress		= false;
@@ -1016,9 +984,11 @@ cpufreq_governor_init(schedutil_gov);
  * the RT-runnable shortcut is dropped. See the comment in the body. Every
  * other term, and the order they are applied in, matches.
  *
- * The 25% margin stays here because Vorpal maps util->freq itself (fmax *
- * util / cap) rather than through map_util_freq(), which is where that
- * margin normally lives.
+ * No DVFS headroom margin: Vorpal applies its own cluster-specific headroom
+ * in rfx_apply_headroom() after the util->freq mapping (fmax * util / cap).
+ * A fixed +25% here inflated every frequency target by one quarter and
+ * kept idle clusters above fmin (the 20%/hr active drain), so the raw
+ * util is handed over unmodified.
  */
 void rfx_get_util_gki510(int cpu, unsigned long boost,
 			 unsigned long *out_util, unsigned long *out_bw_min)
@@ -1042,10 +1012,7 @@ void rfx_get_util_gki510(int cpu, unsigned long boost,
 		util = max_cap;
 		goto boosted;
 	}
-	if (rq->cfs.h_nr_running || rq->rt.rt_nr_running)
-		util = uclamp_rq_util_with(rq, cpu_util_cfs(rq) + cpu_util_rt(rq), NULL);
-	else
-		util = cpu_util_cfs(rq) + cpu_util_rt(rq);
+	util = uclamp_rq_util_with(rq, cpu_util_cfs(rq) + cpu_util_rt(rq), NULL);
 	dl_util = cpu_util_dl(rq);
 	/* Real saturation: no idle time left, fmax is correct here. */
 	if (util + dl_util >= max_cap) {
@@ -1060,48 +1027,9 @@ boosted:
 	if (boost > util)
 		util = boost;
 
-	/*
-	 * Return the un-inflated utilization directly to Vorpal so that
-	 * Vorpal's rfx_apply_headroom() can apply its calibrated per-tier
-	 * headroom margins (6% Little, 0% Big/Prime daily, 10% gaming)
-	 * without double-headroom inflation driving clusters to fmax.
-	 */
 	*out_util = min(util, max_cap);
 }
 EXPORT_SYMBOL_GPL(rfx_get_util_gki510);
-
-/**
- * rfx_get_uclamp_min_gki510 - get UCLAMP_MIN value of the CPU runqueue for Vorpal.
- */
-unsigned long rfx_get_uclamp_min_gki510(int cpu)
-{
-#ifdef CONFIG_UCLAMP_TASK
-	struct rq *rq = cpu_rq(cpu);
-
-	if (static_branch_likely(&sched_uclamp_used))
-		return uclamp_rq_get(rq, UCLAMP_MIN);
-#endif
-	return 0;
-}
-EXPORT_SYMBOL_GPL(rfx_get_uclamp_min_gki510);
-
-/**
- * rfx_get_uclamp_max_gki510 - get UCLAMP_MAX value of the CPU runqueue for Vorpal.
- */
-unsigned long rfx_get_uclamp_max_gki510(int cpu)
-{
-#ifdef CONFIG_UCLAMP_TASK
-	struct rq *rq = cpu_rq(cpu);
-
-	if (static_branch_likely(&sched_uclamp_used)) {
-		if (uclamp_rq_is_idle(rq))
-			return SCHED_CAPACITY_SCALE;
-		return uclamp_rq_get(rq, UCLAMP_MAX);
-	}
-#endif
-	return SCHED_CAPACITY_SCALE;
-}
-EXPORT_SYMBOL_GPL(rfx_get_uclamp_max_gki510);
 
 /**
  * rfx_dl_bw_exceeded_gki510 - DL bandwidth check for Vorpal.
@@ -1136,3 +1064,13 @@ int rfx_setattr_sugov_gki510(struct task_struct *t)
 	return sched_setattr_nocheck(t, &attr);
 }
 EXPORT_SYMBOL_GPL(rfx_setattr_sugov_gki510);
+
+/**
+ * sched_cpu_util - Return current CPU utilization metric.
+ * @cpu: Target CPU.
+ */
+unsigned long sched_cpu_util(int cpu)
+{
+	return cpu_util_cfs(cpu_rq(cpu));
+}
+EXPORT_SYMBOL_GPL(sched_cpu_util);
