@@ -838,7 +838,8 @@ struct pci_error_handlers {
 	/* Device driver may resume normal operations */
 	void (*resume)(struct pci_dev *dev);
 
-	ANDROID_KABI_RESERVE(1);
+	/* Allow device driver to record more details of a correctable error */
+	void (*cor_error_detected)(struct pci_dev *dev);
 };
 
 

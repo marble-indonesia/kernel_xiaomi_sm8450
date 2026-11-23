@@ -768,11 +768,7 @@ out_free:
  * Create a unique stateid_t to represent each COPY.
  */
 static int nfs4_init_cp_state(struct nfsd_net *nn, copy_stateid_t *stid,
-<<<<<<< HEAD
-			      unsigned char cs_type, struct nfs4_stid *p_stid)
-=======
 			      unsigned char sc_type)
->>>>>>> google/android12-5.10
 {
 	int new_id;
 
@@ -783,29 +779,8 @@ static int nfs4_init_cp_state(struct nfsd_net *nn, copy_stateid_t *stid,
 	idr_preload(GFP_KERNEL);
 	spin_lock(&nn->s2s_cp_lock);
 	new_id = idr_alloc_cyclic(&nn->s2s_cp_stateids, stid, 0, 0, GFP_NOWAIT);
-<<<<<<< HEAD
-	if (new_id >= 0) {
-		stid->cs_stid.si_opaque.so_id = new_id;
-		stid->cs_stid.si_generation = 1;
-		/*
-		 * Set cs_type and link onto sc_cp_list under the same lock
-		 * that installed the IDR entry, so a concurrent
-		 * manage_cpntf_state() sees either no entry or a fully
-		 * linked cp_list.
-		 */
-		stid->cs_type = cs_type;
-		if (p_stid) {
-			struct nfs4_cpntf_state *cps =
-				container_of(stid, struct nfs4_cpntf_state,
-					     cp_stateid);
-
-			list_add(&cps->cp_list, &p_stid->sc_cp_list);
-		}
-	}
-=======
 	stid->stid.si_opaque.so_id = new_id;
 	stid->stid.si_generation = 1;
->>>>>>> google/android12-5.10
 	spin_unlock(&nn->s2s_cp_lock);
 	idr_preload_end();
 	if (new_id < 0)
@@ -827,22 +802,8 @@ struct nfs4_cpntf_state *nfs4_alloc_init_cpntf_state(struct nfsd_net *nn,
 	if (!cps)
 		return NULL;
 	cps->cpntf_time = ktime_get_boottime_seconds();
-<<<<<<< HEAD
-	/*
-	 * Fully initialize the entry before nfs4_init_cp_state() publishes it,
-	 * since a concurrent OFFLOAD_CANCEL could then free it. Take an extra
-	 * reference for the caller (dropped with nfs4_put_cpntf_state()).
-	 */
-	memcpy(&cps->cp_p_stateid, &p_stid->sc_stateid, sizeof(stateid_t));
-	memcpy(&cps->cp_p_clid, &p_stid->sc_client->cl_clientid,
-	       sizeof(clientid_t));
-	refcount_set(&cps->cp_stateid.cs_count, 2);
-	if (!nfs4_init_cp_state(nn, &cps->cp_stateid, NFS4_COPYNOTIFY_STID,
-				p_stid))
-=======
 	refcount_set(&cps->cp_stateid.sc_count, 1);
 	if (!nfs4_init_cp_state(nn, &cps->cp_stateid, NFS4_COPYNOTIFY_STID))
->>>>>>> google/android12-5.10
 		goto out_free;
 	spin_lock(&nn->s2s_cp_lock);
 	list_add(&cps->cp_list, &p_stid->sc_cp_list);
@@ -3090,12 +3051,18 @@ nfsd4_set_ex_flags(struct nfs4_client *new, struct nfsd4_exchange_id *clid)
 static bool client_has_openowners(struct nfs4_client *clp)
 {
 	struct nfs4_openowner *oo;
+	bool found = false;
 
+	spin_lock(&clp->cl_lock);
 	list_for_each_entry(oo, &clp->cl_openowners, oo_perclient) {
-		if (!list_empty(&oo->oo_owner.so_stateids))
-			return true;
+		if (!list_empty(&oo->oo_owner.so_stateids)) {
+			found = true;
+			break;
+		}
 	}
-	return false;
+	spin_unlock(&clp->cl_lock);
+
+	return found;
 }
 
 static bool client_has_state(struct nfs4_client *clp)
@@ -3789,6 +3756,7 @@ __be32
 nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		union nfsd4_op_u *u)
 {
+	struct nfsd4_compoundargs *args = rqstp->rq_argp;
 	struct nfsd4_sequence *seq = &u->sequence;
 	struct nfsd4_compoundres *resp = rqstp->rq_resp;
 	struct xdr_stream *xdr = &resp->xdr;
@@ -3798,6 +3766,7 @@ nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	struct nfsd4_conn *conn;
 	__be32 status;
 	int buflen;
+	u32 maxlen, respsize;
 	struct net *net = SVC_NET(rqstp);
 	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 
@@ -3869,7 +3838,22 @@ nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 			session->se_fchannel.maxresp_sz;
 	status = (seq->cachethis) ? nfserr_rep_too_big_to_cache :
 				    nfserr_rep_too_big;
-	if (xdr_restrict_buflen(xdr, buflen - rqstp->rq_auth_slack))
+	if (buflen < rqstp->rq_auth_slack)
+		goto out_put_session;
+	maxlen = buflen - rqstp->rq_auth_slack;
+
+	/*
+	 * A SEQUENCE result too large for maxlen never reaches
+	 * nfsd4_encode_sequence(), so cstate.data_offset stays zero and
+	 * the reply cache overruns the slot.
+	 */
+	respsize = nfsd4_max_reply(rqstp, &args->ops[0]);
+	if (!nfsd4_last_compound_op(rqstp))
+		respsize += COMPOUND_ERR_SLACK_SPACE;
+	if (xdr->buf->len + respsize > maxlen)
+		goto out_put_session;
+
+	if (xdr_restrict_buflen(xdr, maxlen))
 		goto out_put_session;
 	svc_reserve(rqstp, buflen);
 
@@ -3883,6 +3867,7 @@ nfsd4_sequence(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		slot->sl_flags &= ~NFSD4_SLOT_CACHETHIS;
 
 	cstate->slot = slot;
+	cstate->slot_owned = true;
 	cstate->session = session;
 	cstate->clp = clp;
 
@@ -3915,7 +3900,11 @@ nfsd4_sequence_done(struct nfsd4_compoundres *resp)
 	struct nfsd4_compound_state *cs = &resp->cstate;
 
 	if (nfsd4_has_session(cs)) {
-		if (cs->status != nfserr_replay_cache) {
+		/*
+		 * Only the request that claimed the slot may update its
+		 * cached reply and clear NFSD4_SLOT_INUSE.
+		 */
+		if (cs->slot_owned) {
 			nfsd4_store_cache_entry(resp);
 			cs->slot->sl_flags &= ~NFSD4_SLOT_INUSE;
 		}
@@ -5455,216 +5444,6 @@ static bool clients_still_reclaiming(struct nfsd_net *nn)
 	return true;
 }
 
-<<<<<<< HEAD
-struct laundry_time {
-	time64_t cutoff;
-	time64_t new_timeo;
-};
-
-static bool state_expired(struct laundry_time *lt, time64_t last_refresh)
-{
-	time64_t time_remaining;
-
-	if (last_refresh < lt->cutoff)
-		return true;
-	time_remaining = last_refresh - lt->cutoff;
-	lt->new_timeo = min(lt->new_timeo, time_remaining);
-	return false;
-}
-
-#ifdef CONFIG_NFSD_V4_2_INTER_SSC
-void nfsd4_ssc_init_umount_work(struct nfsd_net *nn)
-{
-	spin_lock_init(&nn->nfsd_ssc_lock);
-	INIT_LIST_HEAD(&nn->nfsd_ssc_mount_list);
-	init_waitqueue_head(&nn->nfsd_ssc_waitq);
-}
-EXPORT_SYMBOL_GPL(nfsd4_ssc_init_umount_work);
-
-/*
- * This is called when nfsd is being shutdown, after all inter_ssc
- * cleanup were done, to destroy the ssc delayed unmount list.
- */
-static void nfsd4_ssc_shutdown_umount(struct nfsd_net *nn)
-{
-	struct nfsd4_ssc_umount_item *ni = NULL;
-	struct nfsd4_ssc_umount_item *tmp;
-
-	spin_lock(&nn->nfsd_ssc_lock);
-	list_for_each_entry_safe(ni, tmp, &nn->nfsd_ssc_mount_list, nsui_list) {
-		list_del(&ni->nsui_list);
-		spin_unlock(&nn->nfsd_ssc_lock);
-		mntput(ni->nsui_vfsmount);
-		kfree(ni);
-		spin_lock(&nn->nfsd_ssc_lock);
-	}
-	spin_unlock(&nn->nfsd_ssc_lock);
-}
-
-static void nfsd4_ssc_expire_umount(struct nfsd_net *nn)
-{
-	bool do_wakeup = false;
-	struct nfsd4_ssc_umount_item *ni;
-
-restart:
-	spin_lock(&nn->nfsd_ssc_lock);
-	list_for_each_entry(ni, &nn->nfsd_ssc_mount_list, nsui_list) {
-		if (!time_after(jiffies, ni->nsui_expire))
-			break;
-		if (refcount_read(&ni->nsui_refcnt) > 1)
-			continue;
-
-		/* Prevent concurrent setup during unmount */
-		ni->nsui_busy = true;
-		spin_unlock(&nn->nfsd_ssc_lock);
-		mntput(ni->nsui_vfsmount);
-		spin_lock(&nn->nfsd_ssc_lock);
-
-		/* Force concurrent scanners to restart */
-		list_del(&ni->nsui_list);
-		kfree(ni);
-
-		/* wakeup ssc_connect waiters */
-		do_wakeup = true;
-		/*
-		 * Concurrent nfsd4_ssc_cancel_dul() can free any item
-		 * on the list under nfsd_ssc_lock while mntput() runs
-		 * above.  Restart from the head; the list is short and
-		 * the expire worker is periodic, so this is cheap.
-		 */
-		spin_unlock(&nn->nfsd_ssc_lock);
-		goto restart;
-	}
-	if (do_wakeup)
-		wake_up_all(&nn->nfsd_ssc_waitq);
-	spin_unlock(&nn->nfsd_ssc_lock);
-}
-#endif
-
-/* Check if any lock belonging to this lockowner has any blockers */
-static bool
-nfs4_lockowner_has_blockers(struct nfs4_lockowner *lo)
-{
-	struct file_lock_context *ctx;
-	struct nfs4_ol_stateid *stp;
-	struct nfs4_file *nf;
-
-	list_for_each_entry(stp, &lo->lo_owner.so_stateids, st_perstateowner) {
-		nf = stp->st_stid.sc_file;
-		ctx = locks_inode_context(nf->fi_inode);
-		if (!ctx)
-			continue;
-		if (locks_owner_has_blockers(ctx, lo))
-			return true;
-	}
-	return false;
-}
-
-static bool
-nfs4_anylock_blockers(struct nfs4_client *clp)
-{
-	int i;
-	struct nfs4_stateowner *so;
-	struct nfs4_lockowner *lo;
-
-	if (atomic_read(&clp->cl_delegs_in_recall))
-		return true;
-	spin_lock(&clp->cl_lock);
-	for (i = 0; i < OWNER_HASH_SIZE; i++) {
-		list_for_each_entry(so, &clp->cl_ownerstr_hashtbl[i],
-				so_strhash) {
-			if (so->so_is_open_owner)
-				continue;
-			lo = lockowner(so);
-			if (nfs4_lockowner_has_blockers(lo)) {
-				spin_unlock(&clp->cl_lock);
-				return true;
-			}
-		}
-	}
-	spin_unlock(&clp->cl_lock);
-	return false;
-}
-
-static void
-nfs4_get_client_reaplist(struct nfsd_net *nn, struct list_head *reaplist,
-				struct laundry_time *lt)
-{
-	unsigned int maxreap, reapcnt = 0;
-	struct list_head *pos, *next;
-	struct nfs4_client *clp;
-
-	maxreap = (atomic_read(&nn->nfs4_client_count) >= nn->nfs4_max_clients) ?
-			NFSD_CLIENT_MAX_TRIM_PER_RUN : 0;
-	INIT_LIST_HEAD(reaplist);
-	spin_lock(&nn->client_lock);
-	list_for_each_safe(pos, next, &nn->client_lru) {
-		clp = list_entry(pos, struct nfs4_client, cl_lru);
-		if (clp->cl_state == NFSD4_EXPIRABLE)
-			goto exp_client;
-		if (!state_expired(lt, clp->cl_time))
-			break;
-		if (!atomic_read(&clp->cl_rpc_users)) {
-			if (clp->cl_state == NFSD4_ACTIVE)
-				atomic_inc(&nn->nfsd_courtesy_clients);
-			clp->cl_state = NFSD4_COURTESY;
-		}
-		if (!client_has_state(clp))
-			goto exp_client;
-		if (!nfs4_anylock_blockers(clp))
-			if (reapcnt >= maxreap)
-				continue;
-exp_client:
-		if (!mark_client_expired_locked(clp)) {
-			list_add(&clp->cl_lru, reaplist);
-			reapcnt++;
-		}
-	}
-	spin_unlock(&nn->client_lock);
-}
-
-static void
-nfs4_get_courtesy_client_reaplist(struct nfsd_net *nn,
-				struct list_head *reaplist)
-{
-	unsigned int maxreap = 0, reapcnt = 0;
-	struct list_head *pos, *next;
-	struct nfs4_client *clp;
-
-	maxreap = NFSD_CLIENT_MAX_TRIM_PER_RUN;
-	INIT_LIST_HEAD(reaplist);
-
-	spin_lock(&nn->client_lock);
-	list_for_each_safe(pos, next, &nn->client_lru) {
-		clp = list_entry(pos, struct nfs4_client, cl_lru);
-		if (clp->cl_state == NFSD4_ACTIVE)
-			break;
-		if (reapcnt >= maxreap)
-			break;
-		if (!mark_client_expired_locked(clp)) {
-			list_add(&clp->cl_lru, reaplist);
-			reapcnt++;
-		}
-	}
-	spin_unlock(&nn->client_lock);
-}
-
-static void
-nfs4_process_client_reaplist(struct list_head *reaplist)
-{
-	struct list_head *pos, *next;
-	struct nfs4_client *clp;
-
-	list_for_each_safe(pos, next, reaplist) {
-		clp = list_entry(pos, struct nfs4_client, cl_lru);
-		trace_nfsd_clid_purged(&clp->cl_clientid);
-		list_del_init(&clp->cl_lru);
-		expire_client(clp);
-	}
-}
-
-=======
->>>>>>> google/android12-5.10
 static time64_t
 nfs4_laundromat(struct nfsd_net *nn)
 {
@@ -5690,15 +5469,9 @@ nfs4_laundromat(struct nfsd_net *nn)
 	spin_lock(&nn->s2s_cp_lock);
 	idr_for_each_entry(&nn->s2s_cp_stateids, cps_t, i) {
 		cps = container_of(cps_t, struct nfs4_cpntf_state, cp_stateid);
-<<<<<<< HEAD
-		if (cps->cp_stateid.cs_type == NFS4_COPYNOTIFY_STID &&
-				state_expired(&lt, cps->cpntf_time))
-			revoke_cpntf_state_locked(nn, cps);
-=======
 		if (cps->cp_stateid.sc_type == NFS4_COPYNOTIFY_STID &&
 				cps->cpntf_time < cutoff)
 			_free_cpntf_state_locked(nn, cps);
->>>>>>> google/android12-5.10
 	}
 	spin_unlock(&nn->s2s_cp_lock);
 
@@ -5810,6 +5583,70 @@ laundromat_main(struct work_struct *laundry)
 
 	t = nfs4_laundromat(nn);
 	queue_delayed_work(laundry_wq, &nn->laundromat_work, t*HZ);
+}
+
+static void
+courtesy_client_reaper(struct nfsd_net *nn)
+{
+	struct list_head reaplist;
+
+	nfs4_get_courtesy_client_reaplist(nn, &reaplist);
+	nfs4_process_client_reaplist(&reaplist);
+}
+
+static void
+deleg_reaper(struct nfsd_net *nn)
+{
+	struct list_head *pos, *next;
+	struct nfs4_client *clp;
+	struct list_head cblist;
+
+	INIT_LIST_HEAD(&cblist);
+	spin_lock(&nn->client_lock);
+	list_for_each_safe(pos, next, &nn->client_lru) {
+		clp = list_entry(pos, struct nfs4_client, cl_lru);
+
+		if (clp->cl_minorversion == 0)
+			continue;
+		if (clp->cl_state != NFSD4_ACTIVE)
+			continue;
+		if (list_empty(&clp->cl_delegations))
+			continue;
+		if (atomic_read(&clp->cl_delegs_in_recall))
+			continue;
+		if (test_bit(NFSD4_CLIENT_CB_RECALL_ANY, &clp->cl_flags))
+			continue;
+		if (ktime_get_boottime_seconds() - clp->cl_ra_time < 5)
+			continue;
+		if (clp->cl_cb_state != NFSD4_CB_UP)
+			continue;
+		list_add(&clp->cl_ra_cblist, &cblist);
+
+		/* release in nfsd4_cb_recall_any_release */
+		kref_get(&clp->cl_nfsdfs.cl_ref);
+		set_bit(NFSD4_CLIENT_CB_RECALL_ANY, &clp->cl_flags);
+		clp->cl_ra_time = ktime_get_boottime_seconds();
+	}
+	spin_unlock(&nn->client_lock);
+
+	while (!list_empty(&cblist)) {
+		clp = list_first_entry(&cblist, struct nfs4_client,
+					cl_ra_cblist);
+		list_del_init(&clp->cl_ra_cblist);
+		clp->cl_ra->ra_keep = 0;
+		clp->cl_ra->ra_bmval[0] = BIT(RCA4_TYPE_MASK_RDATA_DLG);
+		nfsd4_run_cb(&clp->cl_ra->ra_cb);
+	}
+}
+
+static void
+nfsd4_state_shrinker_worker(struct work_struct *work)
+{
+	struct nfsd_net *nn = container_of(work, struct nfsd_net,
+				nfsd_shrinker_work);
+
+	courtesy_client_reaper(nn);
+	deleg_reaper(nn);
 }
 
 static inline __be32 nfs4_check_fh(struct svc_fh *fhp, struct nfs4_stid *stp)
@@ -6066,13 +5903,6 @@ out:
 static void
 _free_cpntf_state_locked(struct nfsd_net *nn, struct nfs4_cpntf_state *cps)
 {
-<<<<<<< HEAD
-	WARN_ON_ONCE(cps->cp_stateid.cs_type != NFS4_COPYNOTIFY_STID);
-	if (refcount_dec_and_test(&cps->cp_stateid.cs_count)) {
-		nfsd4_unhash_cpntf_state(nn, cps);
-		kfree(cps);
-	}
-=======
 	WARN_ON_ONCE(cps->cp_stateid.sc_type != NFS4_COPYNOTIFY_STID);
 	if (!refcount_dec_and_test(&cps->cp_stateid.sc_count))
 		return;
@@ -6080,7 +5910,6 @@ _free_cpntf_state_locked(struct nfsd_net *nn, struct nfs4_cpntf_state *cps)
 	idr_remove(&nn->s2s_cp_stateids,
 		   cps->cp_stateid.stid.si_opaque.so_id);
 	kfree(cps);
->>>>>>> google/android12-5.10
 }
 /*
  * A READ from an inter server to server COPY will have a
@@ -6105,27 +5934,10 @@ __be32 manage_cpntf_state(struct nfsd_net *nn, stateid_t *st,
 			state = NULL;
 			goto unlock;
 		}
-<<<<<<< HEAD
-		if (!clp) {
-			refcount_inc(&state->cp_stateid.cs_count);
-		} else if (memcmp(&clp->cl_clientid, &state->cp_p_clid,
-				  sizeof(clientid_t))) {
-			/*
-			 * OFFLOAD_CANCEL: only the creating client may cancel.
-			 * so_id is guessable, so without this check any client
-			 * could free another's cpntf state.
-			 */
-			state = NULL;
-			goto unlock;
-		} else {
-			revoke_cpntf_state_locked(nn, state);
-		}
-=======
 		if (!clp)
 			refcount_inc(&state->cp_stateid.sc_count);
 		else
 			_free_cpntf_state_locked(nn, state);
->>>>>>> google/android12-5.10
 	}
 unlock:
 	spin_unlock(&nn->s2s_cp_lock);
@@ -6619,15 +6431,6 @@ nfsd4_delegreturn(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	if (status)
 		goto put_stateid;
 
-<<<<<<< HEAD
-	status = nfs4_check_fh(&cstate->current_fh, &dp->dl_stid);
-	if (status)
-		goto put_stateid;
-
-	trace_nfsd_deleg_return(stateid);
-	wake_up_var(d_inode(cstate->current_fh.fh_dentry));
-=======
->>>>>>> google/android12-5.10
 	destroy_delegation(dp);
 put_stateid:
 	nfs4_put_stid(&dp->dl_stid);

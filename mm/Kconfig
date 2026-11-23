@@ -836,35 +836,18 @@ config PERCPU_STATS
 	  information includes global and per chunk statistics, which can
 	  be used to help understand percpu memory usage.
 
-config ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
-       def_bool n
-
-config SPECULATIVE_PAGE_FAULT
-       bool "Speculative page faults"
-       default y
-       depends on ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
-       depends on MMU && SMP && !NUMA
-       help
-         Try to handle user space page faults without holding the mmap_sem.
-
-	 This should allow better concurrency for massively threaded process
-	 since the page fault handler will not wait for other threads memory
-	 layout change to be done, assuming that this change is done in another
-	 part of the process's memory space. This type of page fault is named
-	 speculative page fault.
-
-	 If the speculative page fault fails because of a concurrency is
-	 detected or because underlying PMD or PTE tables are not yet
-	 allocating, it is failing its processing and a classic page fault
-	 is then tried.
-
-config GUP_BENCHMARK
-	bool "Enable infrastructure for get_user_pages() and related calls benchmarking"
+config GUP_TEST
+	bool "Enable infrastructure for get_user_pages()-related unit tests"
 	help
-	  Provides /sys/kernel/debug/gup_benchmark that helps with testing
-	  performance of get_user_pages() and related calls.
+	  Provides /sys/kernel/debug/gup_test, which in turn provides a way
+	  to make ioctl calls that can launch kernel-based unit tests for
+	  the get_user_pages*() and pin_user_pages*() family of API calls.
 
-	  See tools/testing/selftests/vm/gup_benchmark.c
+	  These tests include benchmark testing of the _fast variants of
+	  get_user_pages*() and pin_user_pages*(), as well as smoke tests of
+	  the non-_fast variants.
+
+	  See tools/testing/selftests/vm/gup_test.c
 
 config GUP_GET_PTE_LOW_HIGH
 	bool
