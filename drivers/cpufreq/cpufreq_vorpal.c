@@ -127,23 +127,23 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_DOWN_FAST_PCT_DEFAULT	2
 #define RFX_G_DOWN_FAST_MS_DEFAULT	80
 #define RFX_G_MIN_SAMPLE_US_DEFAULT	4000
-#define RFX_G_ENERGY_AWARE_DEFAULT	1
+#define RFX_G_ENERGY_AWARE_DEFAULT	0
 
 /* Gaming floors (% of effective ceiling) */
 #define RFX_G_PRIME_FLOOR_PCT		38
 #define RFX_G_BIG_FLOOR_PCT		44
 #define RFX_G_LITTLE_FLOOR_PCT		30
 #define RFX_G_IDLE_FLOOR_PCT		28
-#define RFX_G_WARMUP_FLOOR_PCT		76
+#define RFX_G_WARMUP_FLOOR_PCT		68
 
 /* Gaming cluster caps (% of effective ceiling) */
-#define RFX_G_LITTLE_CAP_PCT		85
-#define RFX_G_PRIME_CAP_PCT		82
-#define RFX_G_BIG_CAP_PCT		90
+#define RFX_G_LITTLE_CAP_PCT		76
+#define RFX_G_PRIME_CAP_PCT		74
+#define RFX_G_BIG_CAP_PCT		86
 
-/* Gaming burst caps (full headroom for skill/particle/crowd spikes) */
-#define RFX_G_BIG_BURST_CAP_PCT		100
-#define RFX_G_PRIME_BURST_CAP_PCT	96
+/* Gaming burst caps (headroom for skill/crowd spikes without voltage-wall heat) */
+#define RFX_G_BIG_BURST_CAP_PCT		96
+#define RFX_G_PRIME_BURST_CAP_PCT	88
 
 /* Gaming sustained thermal pacer */
 #define RFX_G_SUSTAINED_TRIGGER_PCT	50
@@ -152,7 +152,7 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_SUSTAINED_CLEAR_DWELL_MS	150
 
 /* Gaming thermal energy accumulator (leaky bucket) */
-#define RFX_G_THERMAL_ACCUM_PCT		72
+#define RFX_G_THERMAL_ACCUM_PCT		65
 #define RFX_G_THERMAL_ACC_MAX		2500000
 /* Progressive trim stage thresholds: lightest (0) ... deepest (3) */
 #define RFX_G_THERMAL_STAGE0_ACC	300000
@@ -185,7 +185,7 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_GAMING_REARM_QUIET_NS	(3000 * NSEC_PER_MSEC)
 
 /* Gaming frame-risk & inter-frame VSync bridge */
-#define RFX_G_RISK_ARM_PCT		70
+#define RFX_G_RISK_ARM_PCT		80
 #define RFX_G_RISK_CLEAR_PCT		42
 #define RFX_G_RISK_BOOST_NS		(120 * NSEC_PER_MSEC)
 #define RFX_G_DESCEND_DROP_PCT		15
@@ -219,9 +219,9 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 
 /* Headroom settings (calibrated for 1.0x unskewed PELT util) */
 #define RFX_HEADROOM_DAILY_HIGH		14
-#define RFX_HEADROOM_GAMING		18
-#define RFX_HEADROOM_GAMING_GATE	30
-#define RFX_SAT_TO_MAX_GAMING_PCT	88
+#define RFX_HEADROOM_GAMING		14
+#define RFX_HEADROOM_GAMING_GATE	40
+#define RFX_SAT_TO_MAX_GAMING_PCT	90
 #define RFX_SAT_TO_MAX_DAILY_PCT	88
 
 /* Effective ceiling filter */
@@ -762,39 +762,44 @@ static unsigned int rfx_effective_cap(struct rfx_policy *p, unsigned int fceil,
 	if (p->is_little) {
 		unsigned int pct = RFX_G_LITTLE_CAP_PCT;
 
-		if (demand_pct >= 80 && !p->thermal_cooling)
-			pct = 95U;
-		else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE3_ACC)
-			pct = max(pct - 6, 72U);
-		else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE2_ACC)
-			pct = max(pct - 4, 75U);
-		else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE1_ACC)
-			pct = max(pct - 2, 78U);
-		else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE0_ACC)
-			pct = max(pct - 1, 80U);
+		if (demand_pct >= 82 && !p->thermal_cooling) {
+			pct = 88U;
+			if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE3_ACC)
+				pct -= 4U;
+			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE2_ACC)
+				pct -= 2U;
+		} else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE3_ACC) {
+			pct = max(pct - 8, 66U);
+		} else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE2_ACC) {
+			pct = max(pct - 5, 69U);
+		} else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE1_ACC) {
+			pct = max(pct - 3, 72U);
+		} else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE0_ACC) {
+			pct = max(pct - 1, 74U);
+		}
 
 		return rfx_pct(fceil, pct);
 	} else if (p->is_prime) {
 		s64 big_high = atomic64_read(&rfx_big_high_demand_since);
-		bool big_sat = (big_high && rfx_elapsed(time, (u64)big_high) >= (6 * NSEC_PER_MSEC));
+		bool big_sat = (big_high && rfx_elapsed(time, (u64)big_high) >= (8 * NSEC_PER_MSEC));
 		bool prime_self_sustained = (p->sustained_high_since_ns &&
 			rfx_elapsed(time, p->sustained_high_since_ns) >= (5 * NSEC_PER_MSEC) &&
 			demand_pct >= 45);
-		bool prime_burst = (demand_pct >= 66 || big_sat) && !p->thermal_cooling;
+		bool prime_burst = (demand_pct >= 70 || big_sat) && !p->thermal_cooling;
 		unsigned int base_pct;
 		unsigned int pct;
 		unsigned int pcap;
 
 		/*
 		 * Prime Core Rapid-Tap & Thermal Protection:
-		 * Filter brief (<5ms) low/moderate touch transients at a 56%
-		 * resting cap while unlocking immediately when a heavy thread,
-		 * shader compile, or Big saturation hits. Burst spikes bypass
-		 * the sustained trim while cool so skill/crowd bursts never stall.
+		 * Hold brief touch transients at 52% resting cap and normal
+		 * sustained work at the 74% IPC sweet spot; unlock 88% burst
+		 * on heavy main-thread or Big saturation, with mild thermal
+		 * leaky-bucket trimming during prolonged soak.
 		 */
 		if (!big_sat && !prime_self_sustained &&
 		    demand_pct < RFX_GAMING_WARMUP_TRIGGER_PCT) {
-			base_pct = 56U;
+			base_pct = 52U;
 		} else if (prime_burst) {
 			base_pct = RFX_G_PRIME_BURST_CAP_PCT;
 		} else {
@@ -802,15 +807,20 @@ static unsigned int rfx_effective_cap(struct rfx_policy *p, unsigned int fceil,
 		}
 		pct = base_pct;
 
-		if (pct > 56U && !prime_burst) {
+		if (prime_burst) {
 			if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE3_ACC)
-				pct = max(pct - 6, 74U);
+				pct -= 4U;
 			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE2_ACC)
-				pct = max(pct - 4, 76U);
+				pct -= 2U;
+		} else if (pct > 52U) {
+			if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE3_ACC)
+				pct = max(pct - 7, 66U);
+			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE2_ACC)
+				pct = max(pct - 5, 68U);
 			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE1_ACC)
-				pct = max(pct - 2, 78U);
+				pct = max(pct - 3, 70U);
 			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE0_ACC)
-				pct = max(pct - 1, 80U);
+				pct = max(pct - 1, 72U);
 		}
 
 		pcap = rfx_pct(fceil, pct);
@@ -824,39 +834,44 @@ static unsigned int rfx_effective_cap(struct rfx_policy *p, unsigned int fceil,
 	} else {
 		/*
 		 * Big cluster (primary render tier):
-		 * Rapid Tap Transient Filter:
-		 * Require high demand (>=72%) to persist for >=4ms before
-		 * unlocking burst cap (100% fceil). Brief <4ms touch blips
-		 * remain at steady sustained cap (90%). Burst headroom stays
-		 * available on heavy combat/skill spikes even after sustained
-		 * play, bounded by platform thermal pressure when hot.
+		 * Hysteresis burst gate: arm burst (96% fceil) after >=74%
+		 * demand persists for >=4ms, and hold cleanly until demand
+		 * drops below 66% to avoid knife-edge cap chatter. Prolonged
+		 * open-world soak gently trims via leaky bucket to hold 44-45C.
 		 */
 		unsigned int base_pct, pct, bcap;
 		bool burst_allowed = false;
 
-		if (demand_pct >= 72) {
+		if (demand_pct >= 74) {
 			if (!p->burst_high_since_ns)
 				p->burst_high_since_ns = time;
 			else if (rfx_elapsed(time, p->burst_high_since_ns) >= (4 * NSEC_PER_MSEC))
 				burst_allowed = true;
-		} else {
+		} else if (demand_pct < 66) {
 			p->burst_high_since_ns = 0;
+		} else if (p->burst_high_since_ns &&
+			   rfx_elapsed(time, p->burst_high_since_ns) >= (4 * NSEC_PER_MSEC)) {
+			burst_allowed = true;
 		}
 
 		if (burst_allowed && !p->thermal_cooling) {
 			pct = RFX_G_BIG_BURST_CAP_PCT;
+			if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE3_ACC)
+				pct -= 4U;
+			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE2_ACC)
+				pct -= 2U;
 		} else {
 			base_pct = RFX_G_BIG_CAP_PCT;
 			pct = base_pct;
 
 			if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE3_ACC)
-				pct = max(pct - 6, 84U);
+				pct = max(pct - 8, 78U);
 			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE2_ACC)
-				pct = max(pct - 4, 86U);
+				pct = max(pct - 6, 80U);
 			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE1_ACC)
-				pct = max(pct - 2, 88U);
+				pct = max(pct - 4, 82U);
 			else if (p->thermal_energy_acc >= RFX_G_THERMAL_STAGE0_ACC)
-				pct = max(pct - 1, 89U);
+				pct = max(pct - 2, 84U);
 		}
 
 		bcap = rfx_pct(fceil, pct);
@@ -1564,7 +1579,7 @@ static unsigned int rfx_next_freq(struct rfx_cpu *rfx_c, u64 time, bool gaming)
 		if (gaming && !p->is_little && !p->is_prime) {
 			unsigned int cur_demand = (unsigned int)(p->filt_util * 100 / max_cap);
 
-			if (cur_demand >= 70) {
+			if (cur_demand >= 78) {
 				if (!atomic64_read(&rfx_big_high_demand_since))
 					atomic64_set(&rfx_big_high_demand_since, (s64)time);
 			} else {
