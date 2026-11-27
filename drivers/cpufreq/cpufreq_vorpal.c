@@ -121,30 +121,24 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_D_BIG_MIN_SAMPLE_US		4000
 
 /* ---- Gaming Profile Cadence & Controls (gaming_mode=1) ---- */
-#define RFX_FAST_RATE_US		1000
-#define RFX_GAMING_DOWN_US		2000
-/*
- * Gaming up-ramp dwell: must exceed the eval cadence so an up step spans
- * >=2 evals and frequency climbs in graded steps instead of one OPP jump.
- */
-#define RFX_G_BIG_UP_RAMP_US		1200
-#define RFX_G_PRIME_UP_RAMP_US		1800
-#define RFX_GAMING_DOWN_PCT_PER_2MS	4
-#define RFX_G_DOWN_FAST_PCT_DEFAULT	8
-#define RFX_G_DOWN_FAST_MS_DEFAULT	40
-#define RFX_G_MIN_SAMPLE_US_DEFAULT	1500
+#define RFX_FAST_RATE_US		250
+#define RFX_GAMING_DOWN_US		3000
+#define RFX_GAMING_DOWN_PCT_PER_2MS	1
+#define RFX_G_DOWN_FAST_PCT_DEFAULT	2
+#define RFX_G_DOWN_FAST_MS_DEFAULT	80
+#define RFX_G_MIN_SAMPLE_US_DEFAULT	4000
 #define RFX_G_ENERGY_AWARE_DEFAULT	1
 
 /* Graded up-slew pacing (% of fceil per 2ms) to filter rapid tap spikes */
-#define RFX_G_BIG_UP_PCT_PER_2MS	30
-#define RFX_G_PRIME_UP_PCT_PER_2MS	24
+#define RFX_G_BIG_UP_PCT_PER_2MS	15
+#define RFX_G_PRIME_UP_PCT_PER_2MS	12
 
 /* Gaming floors (% of effective ceiling) */
-#define RFX_G_PRIME_FLOOR_PCT		22
-#define RFX_G_BIG_FLOOR_PCT		35
-#define RFX_G_LITTLE_FLOOR_PCT		20
-#define RFX_G_IDLE_FLOOR_PCT		16
-#define RFX_G_WARMUP_FLOOR_PCT		42
+#define RFX_G_PRIME_FLOOR_PCT		38
+#define RFX_G_BIG_FLOOR_PCT		44
+#define RFX_G_LITTLE_FLOOR_PCT		30
+#define RFX_G_IDLE_FLOOR_PCT		28
+#define RFX_G_WARMUP_FLOOR_PCT		76
 
 /* Gaming cluster caps (% of effective ceiling) — calibrated for cool sustained 120 FPS */
 #define RFX_G_LITTLE_CAP_PCT		65
@@ -171,61 +165,68 @@ extern unsigned long schedutil_cpu_util(int cpu, unsigned long util_cfs,
 #define RFX_G_THERMAL_STAGE3_ACC	2000000
 
 /* Gaming feature defaults */
-#define RFX_G_HISPEED_PCT_DEFAULT	36
-#define RFX_G_GO_HISPEED_PCT_DEFAULT	86
-#define RFX_G_HISPEED_HOLD_US_DEFAULT	3000
+#define RFX_G_HISPEED_PCT_DEFAULT	56
+#define RFX_G_GO_HISPEED_PCT_DEFAULT	90
+#define RFX_G_HISPEED_HOLD_US_DEFAULT	4000
 
 /* Gaming demand gate & idle latch */
-#define RFX_G_FLOOR_GATE_PCT		18
-#define RFX_G_FLOOR_GATE_EXIT_PCT	26
-#define RFX_G_GATE_DWELL_MS		150
-#define RFX_G_GATE_EXIT_DWELL_MS	0
+#define RFX_G_FLOOR_GATE_PCT		22
+#define RFX_G_FLOOR_GATE_EXIT_PCT	42
+#define RFX_G_GATE_DWELL_MS		250
+#define RFX_G_GATE_EXIT_DWELL_MS	50
 
 /* Gaming warmup & asset-load handling */
 #define RFX_WARMUP_RAMP_DOWN_MS		60
 #define RFX_WARMUP_REARM_RAMP_DOWN_MS	300
-#define RFX_GAMING_WARMUP_NS		(200 * NSEC_PER_MSEC)
-#define RFX_GAMING_WARMUP_MAX_NS	(600 * NSEC_PER_MSEC)
+#define RFX_GAMING_WARMUP_NS		(400 * NSEC_PER_MSEC)
+#define RFX_GAMING_WARMUP_MAX_NS	(2000 * NSEC_PER_MSEC)
 #define RFX_GAMING_WARMUP_TRIGGER_PCT	60
-#define RFX_GAMING_WARMUP_EXTEND_PCT	90
+#define RFX_GAMING_WARMUP_EXTEND_PCT	85
 #define RFX_GAMING_WARMUP_RELEASE_PCT	40
-#define RFX_GAMING_WARMUP_RELEASE_NS	(40 * NSEC_PER_MSEC)
-#define RFX_GAMING_WARMUP_HARD_CANCEL_PCT	95
+#define RFX_GAMING_WARMUP_RELEASE_NS	(100 * NSEC_PER_MSEC)
+#define RFX_GAMING_WARMUP_HARD_CANCEL_PCT	92
 #define RFX_GAMING_WARMUP_HARD_CANCEL_EVALS	2
-#define RFX_GAMING_REARM_QUIET_NS	(2000 * NSEC_PER_MSEC)
+#define RFX_GAMING_REARM_QUIET_NS	(3000 * NSEC_PER_MSEC)
 
 /* Gaming frame-risk & inter-frame VSync bridge */
-#define RFX_G_RISK_ARM_PCT		80
-#define RFX_G_RISK_CLEAR_PCT		48
-#define RFX_G_RISK_BOOST_NS		(60 * NSEC_PER_MSEC)
-#define RFX_G_DESCEND_DROP_PCT		12
-#define RFX_G_DESCEND_FROM_PCT		60
-#define RFX_G_DESCEND_HOLD_NS		(35 * NSEC_PER_MSEC)
+#define RFX_G_RISK_ARM_PCT		85
+#define RFX_G_RISK_CLEAR_PCT		50
+#define RFX_G_RISK_BOOST_NS		(120 * NSEC_PER_MSEC)
+#define RFX_G_DESCEND_DROP_PCT		15
+#define RFX_G_DESCEND_FROM_PCT		85
+#define RFX_G_DESCEND_HOLD_NS		(10 * NSEC_PER_MSEC)	/* EMA_MAX_STEPS * DECAY_PERIOD: one frame-gap damper */
 
 /* Gaming anti-spike render load band */
 #define RFX_G_STABILIZE_DEMAND_PCT	60
 #define RFX_G_STABILIZE_DWELL_NS	(35 * NSEC_PER_MSEC)
 
 /* Gaming thermal relief band */
-#define RFX_G_COOL_ENTER_PCT		75
+#define RFX_G_COOL_ENTER_PCT		80
 #define RFX_G_COOL_EXIT_PCT		85
-#define RFX_G_COOL_STEADY_FLOOR_PCT	26
-#define RFX_G_COOL_DEEP_PCT		50
-#define RFX_G_COOL_CAP_PCT		80
+#define RFX_G_COOL_STEADY_FLOOR_PCT	36
+#define RFX_G_COOL_DEEP_PCT		60
+#define RFX_G_COOL_CAP_PCT		88
 #define RFX_G_COOL_PRIME_CAP_PCT	60
 
-/* Utilization EMA decay settings */
-#define RFX_EMA_DECAY_PERIOD_NS		500000
-#define RFX_EMA_GAMING_DIVISOR		32
+/*
+ * Utilization EMA decay:
+ * tau = DIVISOR * DECAY_PERIOD = 50ms (gaming). The gaming eval cadence is
+ * 2ms, so 40 periods per step spans ~two 120fps frame gaps; inter-frame
+ * PELT troughs (8.3ms) therefore walk down a few decay steps instead of
+ * collapsing the render floor, while real scene changes still settle in
+ * ~40ms. Daily keeps its fast 16ms tau for snappy parking.
+ */
+#define RFX_EMA_DECAY_PERIOD_NS		250000
+#define RFX_EMA_GAMING_DIVISOR		200
 #define RFX_EMA_DAILY_DIVISOR		8
-#define RFX_EMA_MAX_STEPS		20
+#define RFX_EMA_MAX_STEPS		40
 
 /* Headroom settings */
-#define RFX_HEADROOM_DAILY_HIGH		12
-#define RFX_HEADROOM_GAMING		14
-#define RFX_HEADROOM_GAMING_GATE	30
-#define RFX_SAT_TO_MAX_GAMING_PCT	95
-#define RFX_SAT_TO_MAX_DAILY_PCT	98
+#define RFX_HEADROOM_DAILY_HIGH		0
+#define RFX_HEADROOM_GAMING		8
+#define RFX_HEADROOM_GAMING_GATE	75
+#define RFX_SAT_TO_MAX_GAMING_PCT	100
+#define RFX_SAT_TO_MAX_DAILY_PCT	88
 
 /* Effective ceiling filter */
 #define RFX_CEIL_RISE_PCT_PER_2MS	1
@@ -792,10 +793,14 @@ static unsigned int rfx_effective_cap(struct rfx_policy *p, unsigned int fceil,
 		 * Touch events and button mashing frequently wake tasks that EAS
 		 * schedules onto Prime cores. Filter brief (<10ms) low/moderate
 		 * transients at a resting cap (48%) while unlocking promptly when
-		 * heavy workload (>=80% or >=10ms self-sustained) or Big cluster
-		 * saturation requires Prime headroom.
+		 * heavy workload or Big cluster saturation requires Prime headroom.
+		 * The unlock trigger is the warmup-trigger band (60%): a real
+		 * offloaded frame or shader-compile thread rides to >=60% on the
+		 * first eval, so the spill tier is never underclocked mid-work;
+		 * sub-60% tap bursts still rest at 48%.
 		 */
-		if (!big_sat && !prime_self_sustained && demand_pct < 80) {
+		if (!big_sat && !prime_self_sustained &&
+		    demand_pct < RFX_GAMING_WARMUP_TRIGGER_PCT) {
 			base_pct = 48U;
 		} else {
 			base_pct = p->gaming_sustained_cap ?
@@ -1370,18 +1375,13 @@ static inline void rfx_pol_up_delay(struct rfx_policy *p, bool gaming)
 {
 	if (gaming) {
 		/*
-		 * Anti-spike up-ramp dampening:
-		 * Filter single-tick demand spikes on Big/Prime so DVFS clock and
-		 * voltage do not chase rapid touch transients or inter-frame micro-bursts.
-		 *
-		 * Ramps must span >=2 evals (cadence RFX_FAST_RATE_US) so the up
-		 * step moves in graded OPPs instead of one big jump: a 500us/1000us
-		 * dwell under the 1500us cadence let every eval pass the delay
-		 * check, which spiked the frequency trace on single-tick demand.
+		 * Up-rate gate: ZERO in gaming, every cluster. The graded
+		 * up-slew inside rfx_target_freq() owns the climb shape, so a
+		 * commit-time up delay only quantizes OPP steps (up steps
+		 * land every 1200us on a 250us cadence -> sawtooth) while
+		 * the slew already bounds the rate.
 		 */
-		p->up_rate_delay_ns = p->is_little ? 0 :
-			(s64)(p->is_prime ? RFX_G_PRIME_UP_RAMP_US :
-					 RFX_G_BIG_UP_RAMP_US) * NSEC_PER_USEC;
+		p->up_rate_delay_ns = 0;
 	} else {
 		p->up_rate_delay_ns = (s64)p->tunables->up_rate_limit_us * NSEC_PER_USEC;
 	}
@@ -2337,7 +2337,7 @@ static void __init rfx_selfcheck(void)
 	WARN_ON(rfx_ema(1000, 0, t, &ns, true) != 1000);
 
 	ns = t - ((u64)(RFX_EMA_MAX_STEPS + 1) * RFX_EMA_DECAY_PERIOD_NS);
-	WARN_ON(rfx_ema(1000, 0, t, &ns, true) != 814 || ns != t);
+	WARN_ON(rfx_ema(1000, 0, t, &ns, true) != 839 || ns != t);
 
 	ns = t - (20 * NSEC_PER_MSEC);
 	WARN_ON(rfx_ema(1000, 0, t, &ns, false) != 0 || ns != t);
@@ -2568,8 +2568,6 @@ static int __init vorpal_gov_init(void)
 	BUILD_BUG_ON(RFX_SAT_TO_MAX_DAILY_PCT > 100);
 
 	BUILD_BUG_ON(RFX_FAST_RATE_US < 1);
-	BUILD_BUG_ON(RFX_G_BIG_UP_RAMP_US <= RFX_FAST_RATE_US);
-	BUILD_BUG_ON(RFX_G_PRIME_UP_RAMP_US < RFX_G_BIG_UP_RAMP_US);
 	BUILD_BUG_ON(RFX_G_HISPEED_PCT_DEFAULT > 100);
 	BUILD_BUG_ON(RFX_G_GO_HISPEED_PCT_DEFAULT > 100);
 	BUILD_BUG_ON(RFX_G_DOWN_FAST_PCT_DEFAULT > 100);
