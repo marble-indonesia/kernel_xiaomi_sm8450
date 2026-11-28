@@ -3091,7 +3091,7 @@ struct dentry *d_splice_alias(struct inode *inode, struct dentry *dentry)
 {
 	return d_splice_alias_ops(inode, dentry, NULL);
 }
-EXPORT_SYMBOL(d_splice_alias);
+EXPORT_SYMBOL_NS(d_splice_alias, ANDROID_GKI_VFS_EXPORT_ONLY);
 
 /*
  * Test whether new_dentry is a subdirectory of old_dentry.

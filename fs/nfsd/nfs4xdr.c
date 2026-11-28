@@ -1896,8 +1896,13 @@ static __be32
 nfsd4_vbuf_from_vector(struct nfsd4_compoundargs *argp, struct kvec *head,
 		       struct page **pages, char **bufp, u32 buflen)
 {
+<<<<<<< HEAD
 	struct kvec *head = xdr->head;
 	char *tmp;
+=======
+	char *tmp, *dp;
+	u32 len;
+>>>>>>> google/android12-5.10-lts
 
 	if (buflen <= head->iov_len) {
 		/*
@@ -1912,8 +1917,19 @@ nfsd4_vbuf_from_vector(struct nfsd4_compoundargs *argp, struct kvec *head,
 	if (tmp == NULL)
 		return nfserr_jukebox;
 
-	if (read_bytes_from_xdr_buf(xdr, 0, tmp, buflen))
-		return nfserr_bad_xdr;
+	dp = tmp;
+	memcpy(dp, head->iov_base, head->iov_len);
+	buflen -= head->iov_len;
+	dp += head->iov_len;
+
+	while (buflen > 0) {
+		len = min_t(u32, buflen, PAGE_SIZE);
+		memcpy(dp, page_address(*pages), len);
+
+		buflen -= len;
+		dp += len;
+		pages++;
+	}
 
 	*bufp = tmp;
 	return 0;
@@ -2031,7 +2047,13 @@ nfsd4_decode_setxattr(struct nfsd4_compoundargs *argp,
 		    &setxattr->setxa_buf, size);
 	}
 
+<<<<<<< HEAD
 	return status;
+=======
+	if (status)
+		return status;
+	DECODE_TAIL;
+>>>>>>> google/android12-5.10-lts
 }
 
 static __be32

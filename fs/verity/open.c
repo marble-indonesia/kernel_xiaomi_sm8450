@@ -309,47 +309,8 @@ static int ensure_verity_info(struct inode *inode)
 	size_t desc_size;
 	int err;
 
-	if (desc->version != 1) {
-		fsverity_err(inode, "Unrecognized descriptor version: %u",
-			     desc->version);
-		return false;
-	}
-
-	if (memchr_inv(desc->__reserved, 0, sizeof(desc->__reserved))) {
-		fsverity_err(inode, "Reserved bits set in descriptor");
-		return false;
-	}
-
-	if (desc->salt_size > sizeof(desc->salt)) {
-		fsverity_err(inode, "Invalid salt_size: %u", desc->salt_size);
-		return false;
-	}
-
-	if (le64_to_cpu(desc->data_size) != inode->i_size) {
-		fsverity_err(inode,
-			     "Wrong data_size: %llu (desc) != %lld (inode)",
-			     le64_to_cpu(desc->data_size), inode->i_size);
-		return false;
-	}
-
-	if (le32_to_cpu(desc->sig_size) > desc_size - sizeof(*desc)) {
-		fsverity_err(inode, "Signature overflows verity descriptor");
-		return false;
-	}
-
-	return true;
-}
-
-/*
- * Read the inode's fsverity_descriptor (with optional appended signature) from
- * the filesystem, and do basic validation of it.
- */
-int fsverity_get_descriptor(struct inode *inode,
-			    struct fsverity_descriptor **desc_ret,
-			    size_t *desc_size_ret)
-{
-	int res;
-	struct fsverity_descriptor *desc;
+	if (vi)
+		return 0;
 
 	err = fsverity_get_descriptor(inode, &desc, &desc_size);
 	if (err)

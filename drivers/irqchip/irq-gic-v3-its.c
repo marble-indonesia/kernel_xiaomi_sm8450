@@ -49,10 +49,6 @@
 #define RDIST_FLAGS_PROPBASE_NEEDS_FLUSHING	(1 << 0)
 #define RDIST_FLAGS_RD_TABLES_PREALLOCATED	(1 << 1)
 
-#define RD_LOCAL_LPI_ENABLED                    BIT(0)
-#define RD_LOCAL_PENDTABLE_PREALLOCATED         BIT(1)
-#define RD_LOCAL_MEMRESERVE_DONE                BIT(2)
-
 static u32 lpi_id_bits;
 
 /*
@@ -3172,7 +3168,7 @@ static void its_cpu_init_lpis(void)
 	phys_addr_t paddr;
 	u64 val, tmp;
 
-	if (gic_data_rdist()->flags & RD_LOCAL_LPI_ENABLED)
+	if (gic_data_rdist()->lpi_enabled)
 		return;
 
 	val = readl_relaxed(rbase + GICR_CTLR);
@@ -3191,13 +3187,15 @@ static void its_cpu_init_lpis(void)
 		paddr &= GENMASK_ULL(51, 16);
 
 		WARN_ON(!gic_check_reserved_range(paddr, LPI_PENDBASE_SZ));
-		gic_data_rdist()->flags |= RD_LOCAL_PENDTABLE_PREALLOCATED;
+		its_free_pending_table(gic_data_rdist()->pend_page);
+		gic_data_rdist()->pend_page = NULL;
 
 		goto out;
 	}
 
 	pend_page = gic_data_rdist()->pend_page;
 	paddr = page_to_phys(pend_page);
+	WARN_ON(gic_reserve_range(paddr, LPI_PENDBASE_SZ));
 
 	/* set PROPBASE */
 	val = (gic_rdists->prop_table_pa |
@@ -3284,11 +3282,10 @@ static void its_cpu_init_lpis(void)
 	/* Make sure the GIC has seen the above */
 	dsb(sy);
 out:
-	gic_data_rdist()->flags |= RD_LOCAL_LPI_ENABLED;
+	gic_data_rdist()->lpi_enabled = true;
 	pr_info("GICv3: CPU%d: using %s LPI pending table @%pa\n",
 		smp_processor_id(),
-		gic_data_rdist()->flags & RD_LOCAL_PENDTABLE_PREALLOCATED ?
-		"reserved" : "allocated",
+		gic_data_rdist()->pend_page ? "allocated" : "reserved",
 		&paddr);
 }
 
@@ -5261,7 +5258,7 @@ static int redist_disable_lpis(void)
 	 *
 	 * If running with preallocated tables, there is nothing to do.
 	 */
-	if ((gic_data_rdist()->flags & RD_LOCAL_LPI_ENABLED) ||
+	if (gic_data_rdist()->lpi_enabled ||
 	    (gic_rdists->flags & RDIST_FLAGS_RD_TABLES_PREALLOCATED))
 		return 0;
 
@@ -5321,38 +5318,6 @@ int its_cpu_init(void)
 	}
 
 	return 0;
-}
-
-static int its_cpu_memreserve_lpi(unsigned int cpu)
-{
-	struct page *pend_page;
-	int ret = 0;
-
-	/* This gets to run exactly once per CPU */
-	if (gic_data_rdist()->flags & RD_LOCAL_MEMRESERVE_DONE)
-		return 0;
-
-	pend_page = gic_data_rdist()->pend_page;
-	if (WARN_ON(!pend_page)) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	/*
-	 * If the pending table was pre-programmed, free the memory we
-	 * preemptively allocated. Otherwise, reserve that memory for
-	 * later kexecs.
-	 */
-	if (gic_data_rdist()->flags & RD_LOCAL_PENDTABLE_PREALLOCATED) {
-		its_free_pending_table(pend_page);
-		gic_data_rdist()->pend_page = NULL;
-	} else {
-		phys_addr_t paddr = page_to_phys(pend_page);
-		WARN_ON(gic_reserve_range(paddr, LPI_PENDBASE_SZ));
-	}
-
-out:
-	gic_data_rdist()->flags |= RD_LOCAL_MEMRESERVE_DONE;
-	return ret;
 }
 
 /* Mark all the BASER registers as invalid before they get reprogrammed */
@@ -5664,23 +5629,6 @@ static void __init its_acpi_probe(void)
 #else
 static void __init its_acpi_probe(void) { }
 #endif
-
-int __init its_lpi_memreserve_init(void)
-{
-	int state;
-
-	if (!efi_enabled(EFI_CONFIG_TABLES))
-		return 0;
-
-	state = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN,
-				  "irqchip/arm/gicv3/memreserve:online",
-				  its_cpu_memreserve_lpi,
-				  NULL);
-	if (state < 0)
-		return state;
-
-	return 0;
-}
 
 int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
 		    struct irq_domain *parent_domain)

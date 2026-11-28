@@ -253,12 +253,6 @@ match:
 			goto fail_of_entry;
 	}
 
-	if (cell->swnode) {
-		ret = device_add_software_node(&pdev->dev, cell->swnode);
-		if (ret)
-			goto fail_of_entry;
-	}
-
 	for (r = 0; r < cell->num_resources; r++) {
 		res[r].name = cell->resources[r].name;
 		res[r].flags = cell->resources[r].flags;
@@ -293,18 +287,18 @@ match:
 			if (has_acpi_companion(&pdev->dev)) {
 				ret = acpi_check_resource_conflict(&res[r]);
 				if (ret)
-					goto fail_res_conflict;
+					goto fail_of_entry;
 			}
 		}
 	}
 
 	ret = platform_device_add_resources(pdev, res, cell->num_resources);
 	if (ret)
-		goto fail_res_conflict;
+		goto fail_of_entry;
 
 	ret = platform_device_add(pdev);
 	if (ret)
-		goto fail_res_conflict;
+		goto fail_of_entry;
 
 	if (cell->pm_runtime_no_callbacks)
 		pm_runtime_no_callbacks(&pdev->dev);
@@ -313,9 +307,6 @@ match:
 
 	return 0;
 
-fail_res_conflict:
-	if (cell->swnode)
-		device_remove_software_node(&pdev->dev);
 fail_of_entry:
 	list_for_each_entry_safe(of_entry, tmp, &mfd_of_node_list, list)
 		if (of_entry->dev == &pdev->dev) {
@@ -386,9 +377,6 @@ static int mfd_remove_devices_fn(struct device *dev, void *data)
 
 	if (level && cell->level > *level)
 		return 0;
-
-	if (cell->swnode)
-		device_remove_software_node(&pdev->dev);
 
 	regulator_bulk_unregister_supply_alias(dev, cell->parent_supplies,
 					       cell->num_parent_supplies);

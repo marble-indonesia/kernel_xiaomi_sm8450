@@ -4880,8 +4880,9 @@ int hugetlb_mcopy_atomic_pte(struct mm_struct *dst_mm,
 	/* No need to invalidate - it was non-present before */
 	update_mmu_cache(dst_vma, dst_addr, dst_pte);
 
-	set_page_huge_active(page);
-	if (vm_shared)
+	if (!is_continue)
+		set_page_huge_active(page);
+	if (vm_shared || is_continue)
 		unlock_page(page);
 
 	/*

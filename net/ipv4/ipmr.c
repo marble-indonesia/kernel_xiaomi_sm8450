@@ -515,7 +515,7 @@ static netdev_tx_t reg_vif_xmit(struct sk_buff *skb, struct net_device *dev)
 	int err;
 
 	if (skb->protocol != htons(ETH_P_IP) || !pskb_inet_may_pull(skb)) {
-		DEV_STATS_INC(dev, tx_errors);
+		dev->stats.tx_errors++;
 		kfree_skb(skb);
 		return NETDEV_TX_OK;
 	}

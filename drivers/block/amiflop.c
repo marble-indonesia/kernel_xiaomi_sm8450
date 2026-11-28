@@ -1441,7 +1441,7 @@ static void flush_track_timer_stop(unsigned int drive)
 	flush_track_timer_stopped[drive] = true;
 	spin_unlock_irqrestore(&flush_track_timer_lock, flags);
 
-	timer_delete_sync(flush_track_timer + drive);
+	del_timer_sync(flush_track_timer + drive);
 }
 
 static void flush_track_timer_start(unsigned int drive)

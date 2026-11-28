@@ -495,17 +495,14 @@ static struct fanotify_event *fanotify_alloc_name_event(struct inode *id,
 	unsigned int child_fh_len = fanotify_encode_fh_len(child);
 	unsigned int size;
 
-	if (WARN_ON_ONCE(name_len >= PATH_MAX || name2_len >= PATH_MAX))
+	if (file_name && WARN_ON_ONCE(file_name->len >= PATH_MAX))
 		return NULL;
 
-	/* Reserve terminating null byte even for empty name */
-	size = sizeof(*fne) + name_len + name2_len + 2;
-	if (dir_fh_len)
-		size += FANOTIFY_FH_HDR_LEN + dir_fh_len;
-	if (dir2_fh_len)
-		size += FANOTIFY_FH_HDR_LEN + dir2_fh_len;
+	size = sizeof(*fne) + FANOTIFY_FH_HDR_LEN + dir_fh_len;
 	if (child_fh_len)
 		size += FANOTIFY_FH_HDR_LEN + child_fh_len;
+	if (file_name)
+		size += file_name->len + 1;
 	fne = kvmalloc(size, gfp);
 	if (!fne)
 		return NULL;

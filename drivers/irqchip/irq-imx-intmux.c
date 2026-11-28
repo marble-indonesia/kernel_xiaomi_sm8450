@@ -286,7 +286,7 @@ out:
 	return ret;
 }
 
-static void imx_intmux_remove(struct platform_device *pdev)
+static int imx_intmux_remove(struct platform_device *pdev)
 {
 	struct intmux_data *data = platform_get_drvdata(pdev);
 	int i, ret;
@@ -311,6 +311,8 @@ static void imx_intmux_remove(struct platform_device *pdev)
 		clk_disable_unprepare(data->ipg_clk);
 		pm_runtime_set_suspended(&pdev->dev);
 	}
+
+	return 0;
 }
 
 #ifdef CONFIG_PM
@@ -370,6 +372,6 @@ static struct platform_driver imx_intmux_driver = {
 		.pm		= &imx_intmux_pm_ops,
 	},
 	.probe		= imx_intmux_probe,
-	.remove_new	= imx_intmux_remove,
+	.remove		= imx_intmux_remove,
 };
 builtin_platform_driver(imx_intmux_driver);

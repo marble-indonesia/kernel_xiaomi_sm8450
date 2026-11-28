@@ -2017,10 +2017,10 @@ continue_unlock:
 				goto write_node;
 
 			/* flush inline_data */
-			if (is_inline_node(page)) {
+			if (page_private_inline(page)) {
 				nid_t ino = ino_of_node(page);
 
-				clear_inline_node(page);
+				clear_page_private_inline(page);
 				unlock_page(page);
 				flush_inline_data(sbi, ino);
 				goto lock_node;
@@ -2713,7 +2713,7 @@ update_inode:
 		int err;
 
 		err = f2fs_get_node_info(sbi, F2FS_I(inode)->i_xattr_nid,
-								&ni);
+								&ni, false);
 		if (err) {
 			f2fs_put_page(ipage, 1);
 			return err;

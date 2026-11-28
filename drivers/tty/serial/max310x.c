@@ -65,7 +65,6 @@
 #define MAX310X_BRGDIVMSB_REG		(0x1d) /* Baud rate divisor MSB */
 #define MAX310X_CLKSRC_REG		(0x1e) /* Clock source */
 #define MAX310X_REG_1F			(0x1f)
-#define MAX310X_EXTREG_START		(0x20) /* Only relevant in SPI mode. */
 
 #define MAX310X_REVID_REG		MAX310X_REG_1F /* Revision ID */
 
@@ -73,9 +72,8 @@
 #define MAX310X_GLOBALCMD_REG		MAX310X_REG_1F /* Global Command (WO) */
 
 /* Extended registers */
-#define MAX310X_REVID_EXTREG		(0x25) /* Revision ID
-						* (extended addressing space)
-						*/
+#define MAX310X_REVID_EXTREG		MAX310X_REG_05 /* Revision ID */
+
 /* IRQ register bits */
 #define MAX310X_IRQ_LSR_BIT		(1 << 0) /* LSR interrupt */
 #define MAX310X_IRQ_SPCHR_BIT		(1 << 1) /* Special char interrupt */
@@ -261,21 +259,11 @@
 #define MAX14830_BRGCFG_CLKDIS_BIT	(1 << 6) /* Clock Disable */
 #define MAX14830_REV_ID			(0xb0)
 
-struct max310x_if_cfg {
-	int (*extended_reg_enable)(struct device *dev, bool enable);
-	u8 rev_id_offset;
-};
-
 struct max310x_devtype {
-	struct {
-		unsigned short min;
-		unsigned short max;
-	} slave_addr;
 	int	nr;
+	int	(*detect)(struct device *);
 	char	name[9];
 	u8	mode1;
-	u8	rev_id_val;
-	u8	rev_id_reg; /* Relevant only if rev_id_val is defined. */
 	u8	power_reg; /* Register address for power/sleep control. */
 	u8	power_bit; /* Bit for sleep or power-off mode (active high). */
 };
@@ -339,52 +327,63 @@ static void max310x_port_update(struct uart_port *port, u8 reg, u8 mask, u8 val)
 	regmap_update_bits(one->regmap, reg, mask, val);
 }
 
-static int max310x_detect(struct device *dev)
+static int max3107_detect(struct device *dev)
 {
 	struct max310x_port *s = dev_get_drvdata(dev);
 	unsigned int val = 0;
 	int ret;
 
-	/* Check if variant supports REV ID register: */
-	if (s->devtype->rev_id_val) {
-		u8 rev_id_reg = s->devtype->rev_id_reg;
+	ret = regmap_read(s->regmap, MAX310X_REVID_REG, &val);
+	if (ret)
+		return ret;
 
-		/* Check if REV ID is in extended addressing space: */
-		if (s->devtype->rev_id_reg >= MAX310X_EXTREG_START) {
-			ret = s->if_cfg->extended_reg_enable(dev, true);
-			if (ret)
-				return ret;
+	if (((val & MAX310x_REV_MASK) != MAX3107_REV_ID)) {
+		dev_err(dev,
+			"%s ID 0x%02x does not match\n", s->devtype->name, val);
+		return -ENODEV;
+	}
 
-			/* Adjust REV ID extended addressing space address: */
-			if (s->if_cfg->rev_id_offset)
-				rev_id_reg -= s->if_cfg->rev_id_offset;
-		}
+	return 0;
+}
 
-		regmap_read(s->regmap, rev_id_reg, &val);
+static int max3108_detect(struct device *dev)
+{
+	struct max310x_port *s = dev_get_drvdata(dev);
+	unsigned int val = 0;
+	int ret;
 
-		if (s->devtype->rev_id_reg >= MAX310X_EXTREG_START) {
-			ret = s->if_cfg->extended_reg_enable(dev, false);
-			if (ret)
-				return ret;
-		}
+	/* MAX3108 have not REV ID register, we just check default value
+	 * from clocksource register to make sure everything works.
+	 */
+	ret = regmap_read(s->regmap, MAX310X_CLKSRC_REG, &val);
+	if (ret)
+		return ret;
 
-		if (((val & MAX310x_REV_MASK) != s->devtype->rev_id_val))
-			return dev_err_probe(dev, -ENODEV,
-					     "%s ID 0x%02x does not match\n",
-					     s->devtype->name, val);
-	} else {
-		/*
-		 * For variant without REV ID register, just check default value
-		 * from clocksource register to make sure everything works.
-		 */
-		ret = regmap_read(s->regmap, MAX310X_CLKSRC_REG, &val);
-		if (ret)
-			return ret;
+	if (val != (MAX310X_CLKSRC_EXTCLK_BIT | MAX310X_CLKSRC_PLLBYP_BIT)) {
+		dev_err(dev, "%s not present\n", s->devtype->name);
+		return -ENODEV;
+	}
 
-		if (val != (MAX310X_CLKSRC_EXTCLK_BIT | MAX310X_CLKSRC_PLLBYP_BIT))
-			return dev_err_probe(dev, -ENODEV,
-					     "%s not present\n",
-					     s->devtype->name);
+	return 0;
+}
+
+static int max3109_detect(struct device *dev)
+{
+	struct max310x_port *s = dev_get_drvdata(dev);
+	unsigned int val = 0;
+	int ret;
+
+	ret = regmap_write(s->regmap, MAX310X_GLOBALCMD_REG,
+			   MAX310X_EXTREG_ENBL);
+	if (ret)
+		return ret;
+
+	regmap_read(s->regmap, MAX310X_REVID_EXTREG, &val);
+	regmap_write(s->regmap, MAX310X_GLOBALCMD_REG, MAX310X_EXTREG_DSBL);
+	if (((val & MAX310x_REV_MASK) != MAX3109_REV_ID)) {
+		dev_err(dev,
+			"%s ID 0x%02x does not match\n", s->devtype->name, val);
+		return -ENODEV;
 	}
 
 	return 0;
@@ -400,60 +399,62 @@ static void max310x_power(struct uart_port *port, int on)
 		msleep(50);
 }
 
+static int max14830_detect(struct device *dev)
+{
+	struct max310x_port *s = dev_get_drvdata(dev);
+	unsigned int val = 0;
+	int ret;
+
+	ret = regmap_write(s->regmap, MAX310X_GLOBALCMD_REG,
+			   MAX310X_EXTREG_ENBL);
+	if (ret)
+		return ret;
+
+	regmap_read(s->regmap, MAX310X_REVID_EXTREG, &val);
+	regmap_write(s->regmap, MAX310X_GLOBALCMD_REG, MAX310X_EXTREG_DSBL);
+	if (((val & MAX310x_REV_MASK) != MAX14830_REV_ID)) {
+		dev_err(dev,
+			"%s ID 0x%02x does not match\n", s->devtype->name, val);
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
 static const struct max310x_devtype max3107_devtype = {
 	.name	= "MAX3107",
 	.nr	= 1,
 	.mode1	= MAX310X_MODE1_AUTOSLEEP_BIT | MAX310X_MODE1_IRQSEL_BIT,
-	.rev_id_val = MAX3107_REV_ID,
-	.rev_id_reg = MAX310X_REVID_REG,
+	.detect	= max3107_detect,
 	.power_reg = MAX310X_MODE1_REG,
 	.power_bit = MAX310X_MODE1_FORCESLEEP_BIT,
-	.slave_addr	= {
-		.min = 0x2c,
-		.max = 0x2f,
-	},
 };
 
 static const struct max310x_devtype max3108_devtype = {
 	.name	= "MAX3108",
 	.nr	= 1,
 	.mode1	= MAX310X_MODE1_AUTOSLEEP_BIT,
-	.rev_id_val = 0, /* Unsupported. */
-	.rev_id_reg = 0, /* Irrelevant when rev_id_val is not defined. */
+	.detect	= max3108_detect,
 	.power_reg = MAX310X_MODE1_REG,
 	.power_bit = MAX310X_MODE1_FORCESLEEP_BIT,
-	.slave_addr	= {
-		.min = 0x60,
-		.max = 0x6f,
-	},
 };
 
 static const struct max310x_devtype max3109_devtype = {
 	.name	= "MAX3109",
 	.nr	= 2,
 	.mode1	= MAX310X_MODE1_AUTOSLEEP_BIT,
-	.rev_id_val = MAX3109_REV_ID,
-	.rev_id_reg = MAX310X_REVID_EXTREG,
+	.detect	= max3109_detect,
 	.power_reg = MAX310X_MODE1_REG,
 	.power_bit = MAX310X_MODE1_FORCESLEEP_BIT,
-	.slave_addr	= {
-		.min = 0x60,
-		.max = 0x6f,
-	},
 };
 
 static const struct max310x_devtype max14830_devtype = {
 	.name	= "MAX14830",
 	.nr	= 4,
 	.mode1	= MAX310X_MODE1_IRQSEL_BIT,
-	.rev_id_val = MAX14830_REV_ID,
-	.rev_id_reg = MAX310X_REVID_EXTREG,
+	.detect	= max14830_detect,
 	.power_reg = MAX310X_BRGCFG_REG,
 	.power_bit = MAX14830_BRGCFG_CLKDIS_BIT,
-	.slave_addr	= {
-		.min = 0x60,
-		.max = 0x6f,
-	},
 };
 
 static bool max310x_reg_writeable(struct device *dev, unsigned int reg)
@@ -1409,7 +1410,7 @@ static int max310x_probe(struct device *dev, const struct max310x_devtype *devty
 	dev_set_drvdata(dev, s);
 
 	/* Check device to ensure we are talking to what we expect */
-	ret = max310x_detect(dev);
+	ret = devtype->detect(dev);
 	if (ret)
 		goto out_clk;
 
@@ -1575,19 +1576,6 @@ static struct regmap_config regcfg = {
 };
 
 #ifdef CONFIG_SPI_MASTER
-static int max310x_spi_extended_reg_enable(struct device *dev, bool enable)
-{
-	struct max310x_port *s = dev_get_drvdata(dev);
-
-	return regmap_write(s->regmap, MAX310X_GLOBALCMD_REG,
-			    enable ? MAX310X_EXTREG_ENBL : MAX310X_EXTREG_DSBL);
-}
-
-static const struct max310x_if_cfg __maybe_unused max310x_spi_if_cfg = {
-	.extended_reg_enable = max310x_spi_extended_reg_enable,
-	.rev_id_offset = MAX310X_EXTREG_START,
-};
-
 static int max310x_spi_probe(struct spi_device *spi)
 {
 	const struct max310x_devtype *devtype;
@@ -1640,106 +1628,6 @@ static struct spi_driver max310x_spi_driver = {
 	.probe		= max310x_spi_probe,
 	.remove		= max310x_spi_remove,
 	.id_table	= max310x_id_table,
-};
-#endif
-
-#ifdef CONFIG_I2C
-static int max310x_i2c_extended_reg_enable(struct device *dev, bool enable)
-{
-	return 0;
-}
-
-static struct regmap_config regcfg_i2c = {
-	.reg_bits = 8,
-	.val_bits = 8,
-	.cache_type = REGCACHE_RBTREE,
-	.writeable_reg = max310x_reg_writeable,
-	.volatile_reg = max310x_reg_volatile,
-	.precious_reg = max310x_reg_precious,
-	.max_register = MAX310X_REVID_EXTREG,
-	.writeable_noinc_reg = max310x_reg_noinc,
-	.readable_noinc_reg = max310x_reg_noinc,
-	.max_raw_read = MAX310X_FIFO_SIZE,
-	.max_raw_write = MAX310X_FIFO_SIZE,
-};
-
-static const struct max310x_if_cfg max310x_i2c_if_cfg = {
-	.extended_reg_enable = max310x_i2c_extended_reg_enable,
-	.rev_id_offset = 0, /* No offset in I2C mode. */
-};
-
-static unsigned short max310x_i2c_slave_addr(unsigned short addr,
-					     unsigned int nr)
-{
-	/*
-	 * For MAX14830 and MAX3109, the slave address depends on what the
-	 * A0 and A1 pins are tied to.
-	 * See Table I2C Address Map of the datasheet.
-	 * Based on that table, the following formulas were determined.
-	 * UART1 - UART0 = 0x10
-	 * UART2 - UART1 = 0x20 + 0x10
-	 * UART3 - UART2 = 0x10
-	 */
-
-	addr -= nr * 0x10;
-
-	if (nr >= 2)
-		addr -= 0x20;
-
-	return addr;
-}
-
-static int max310x_i2c_probe(struct i2c_client *client)
-{
-	const struct max310x_devtype *devtype;
-	struct i2c_client *port_client;
-	struct regmap *regmaps[4];
-	unsigned int i;
-	u8 port_addr;
-
-	devtype = device_get_match_data(&client->dev);
-	if (!devtype)
-		return dev_err_probe(&client->dev, -ENODEV, "Failed to match device\n");
-
-	if (client->addr < devtype->slave_addr.min ||
-		client->addr > devtype->slave_addr.max)
-		return dev_err_probe(&client->dev, -EINVAL,
-				     "Slave addr 0x%x outside of range [0x%x, 0x%x]\n",
-				     client->addr, devtype->slave_addr.min,
-				     devtype->slave_addr.max);
-
-	regmaps[0] = devm_regmap_init_i2c(client, &regcfg_i2c);
-
-	for (i = 1; i < devtype->nr; i++) {
-		port_addr = max310x_i2c_slave_addr(client->addr, i);
-		port_client = devm_i2c_new_dummy_device(&client->dev,
-							client->adapter,
-							port_addr);
-		if (IS_ERR(port_client))
-			return PTR_ERR(port_client);
-
-		regmaps[i] = devm_regmap_init_i2c(port_client, &regcfg_i2c);
-	}
-
-	return max310x_probe(&client->dev, devtype, &max310x_i2c_if_cfg,
-			     regmaps, client->irq);
-}
-
-static int max310x_i2c_remove(struct i2c_client *client)
-{
-	max310x_remove(&client->dev);
-
-	return 0;
-}
-
-static struct i2c_driver max310x_i2c_driver = {
-	.driver = {
-		.name		= MAX310X_NAME,
-		.of_match_table	= max310x_dt_ids,
-		.pm		= &max310x_pm_ops,
-	},
-	.probe_new	= max310x_i2c_probe,
-	.remove		= max310x_i2c_remove,
 };
 #endif
 

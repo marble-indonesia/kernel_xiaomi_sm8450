@@ -1472,8 +1472,11 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 
 	ret = 0;
 	do {
-		const bool any_mode_removed = vma->vm_flags &
-			(VM_UFFD_MISSING | VM_UFFD_WP) & ~vm_flags;
+		struct userfaultfd_ctx *cur_uffd_ctx =
+				rcu_dereference_protected(vma->vm_userfaultfd_ctx.ctx,
+							  lockdep_is_held(&mm->mmap_lock));
+		const bool any_mode_removed =
+			vma->vm_flags & __VM_UFFD_FLAGS & ~vm_flags;
 
 		cond_resched();
 
@@ -1485,9 +1488,8 @@ static int userfaultfd_register(struct userfaultfd_ctx *ctx,
 		 * Nothing to do: this vma is already registered into this
 		 * userfaultfd and with the right tracking mode too.
 		 */
-		if (vma->vm_userfaultfd_ctx.ctx == ctx &&
-		    (vma->vm_flags & (VM_UFFD_MISSING | VM_UFFD_WP)) ==
-		    vm_flags)
+		if (cur_uffd_ctx == ctx &&
+		    (vma->vm_flags & __VM_UFFD_FLAGS) == vm_flags)
 			goto skip;
 
 		if (vma->vm_start > start)

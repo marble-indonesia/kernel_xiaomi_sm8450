@@ -4458,7 +4458,7 @@ static void adapter_uninit(struct AdapterCtlBlk *acb)
 	unsigned long flags;
 
 	/* Drain the self-rearming timer; must not run under host_lock. */
-	timer_delete_sync(&acb->waiting_timer);
+	del_timer_sync(&acb->waiting_timer);
 
 	DC395x_LOCK_IO(acb->scsi_host, flags);
 
