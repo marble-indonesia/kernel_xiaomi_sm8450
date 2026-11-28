@@ -58,12 +58,14 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 	unsigned int *ptr,
 	struct kgsl_process_private *process,
 	struct adreno_ib_object_list *ib_obj_list,
-	struct ib_parser_variables *ib_parse_vars);
+	struct ib_parser_variables *ib_parse_vars,
+	int ib_level);
 
 static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
-	unsigned int *ptr,
+	unsigned int *ptr, int size,
 	struct kgsl_process_private *process,
-	struct adreno_ib_object_list *ib_obj_list);
+	struct adreno_ib_object_list *ib_obj_list,
+	int ib_level);
 
 /*
  * adreno_ib_merge_range() - Increases the address range tracked by an ib
@@ -406,7 +408,8 @@ static int ib_add_type0_entries(struct kgsl_device *device,
 static int ib_parse_draw_indx(struct kgsl_device *device, unsigned int *pkt,
 	struct kgsl_process_private *process,
 	struct adreno_ib_object_list *ib_obj_list,
-	struct ib_parser_variables *ib_parse_vars)
+	struct ib_parser_variables *ib_parse_vars,
+	int ib_level)
 {
 	int ret = 0;
 	int i;
@@ -478,7 +481,7 @@ static int ib_parse_draw_indx(struct kgsl_device *device, unsigned int *pkt,
 			ib_parse_vars->set_draw_groups[i].cmd_stream_addr,
 			ib_parse_vars->set_draw_groups[i].cmd_stream_dwords,
 			0, SNAPSHOT_GPU_OBJECT_DRAW,
-			ib_obj_list, 2);
+			ib_obj_list, ib_level + 1);
 		if (ret)
 			break;
 	}
@@ -491,16 +494,18 @@ static int ib_parse_draw_indx(struct kgsl_device *device, unsigned int *pkt,
  */
 
 static int ib_parse_type7(struct kgsl_device *device, unsigned int *ptr,
+	int pktsize,
 	struct kgsl_process_private *process,
 	struct adreno_ib_object_list *ib_obj_list,
-	struct ib_parser_variables *ib_parse_vars)
+	struct ib_parser_variables *ib_parse_vars,
+	int ib_level)
 {
 	int opcode = cp_type7_opcode(*ptr);
 
 	switch (opcode) {
 	case CP_SET_DRAW_STATE:
-		return ib_parse_type7_set_draw_state(device, ptr, process,
-					ib_obj_list);
+		return ib_parse_type7_set_draw_state(device, ptr, pktsize,
+					process, ib_obj_list, ib_level);
 	}
 
 	return 0;
@@ -514,7 +519,8 @@ static int ib_parse_type7(struct kgsl_device *device, unsigned int *ptr,
 static int ib_parse_type3(struct kgsl_device *device, unsigned int *ptr,
 	struct kgsl_process_private *process,
 	struct adreno_ib_object_list *ib_obj_list,
-	struct ib_parser_variables *ib_parse_vars)
+	struct ib_parser_variables *ib_parse_vars,
+	int ib_level)
 {
 	int opcode = cp_type3_opcode(*ptr);
 
@@ -533,10 +539,10 @@ static int ib_parse_type3(struct kgsl_device *device, unsigned int *ptr,
 	case CP_DRAW_INDIRECT:
 	case CP_DRAW_INDX_INDIRECT:
 		return ib_parse_draw_indx(device, ptr, process, ib_obj_list,
-					ib_parse_vars);
+					ib_parse_vars, ib_level);
 	case CP_SET_DRAW_STATE:
 		return ib_parse_set_draw_state(device, ptr, process,
-					ib_obj_list, ib_parse_vars);
+					ib_obj_list, ib_parse_vars, ib_level);
 	}
 
 	return 0;
@@ -644,11 +650,11 @@ static int ib_parse_type0(struct kgsl_device *device, unsigned int *ptr,
 }
 
 static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
-	unsigned int *ptr,
+	unsigned int *ptr, int size,
 	struct kgsl_process_private *process,
-	struct adreno_ib_object_list *ib_obj_list)
+	struct adreno_ib_object_list *ib_obj_list,
+	int ib_level)
 {
-	int size = type7_pkt_size(*ptr);
 	int i;
 	int ret = 0;
 	int flags;
@@ -683,7 +689,7 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 				ret = adreno_ib_find_objs(device, process,
 					cmd_stream_addr, cmd_stream_dwords,
 					0, SNAPSHOT_GPU_OBJECT_DRAW,
-					ib_obj_list, IB_LEVEL_2);
+					ib_obj_list, ib_level + 1);
 			if (ret)
 				break;
 			continue;
@@ -696,7 +702,7 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 			ret = adreno_ib_find_objs(device, process,
 				gpuaddr, (ptr[i] & 0x0000FFFF),
 				0, SNAPSHOT_GPU_OBJECT_IB,
-				ib_obj_list, IB_LEVEL_2);
+				ib_obj_list, ib_level + 1);
 			if (ret)
 				break;
 		}
@@ -708,7 +714,8 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 	unsigned int *ptr,
 	struct kgsl_process_private *process,
 	struct adreno_ib_object_list *ib_obj_list,
-	struct ib_parser_variables *ib_parse_vars)
+	struct ib_parser_variables *ib_parse_vars,
+	int ib_level)
 {
 	int size = type0_pkt_size(*ptr);
 	int i;
@@ -760,7 +767,7 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 			ret = adreno_ib_find_objs(device, process,
 				ptr[i + 1], (ptr[i] & 0x0000FFFF),
 				0, SNAPSHOT_GPU_OBJECT_IB,
-				ib_obj_list, 2);
+				ib_obj_list, ib_level + 1);
 			if (ret)
 				break;
 		}
@@ -870,6 +877,9 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 	struct kgsl_mem_entry *entry;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 
+	if (ib_level > IB_LEVEL_3)
+		return 0;
+
 	/* check that this IB is not already on list */
 	for (i = 0; i < ib_obj_list->num_objs; i++) {
 		ib_obj = &(ib_obj_list->obj_list[i]);
@@ -903,18 +913,19 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 
 	for (i = 0; rem > 0; rem--, i++) {
 		int pktsize;
+		unsigned int hdr = src[i];
 
-		if (pkt_is_type0(src[i]))
-			pktsize = type0_pkt_size(src[i]);
+		if (pkt_is_type0(hdr))
+			pktsize = type0_pkt_size(hdr);
 
-		else if (pkt_is_type3(src[i]))
-			pktsize = type3_pkt_size(src[i]);
+		else if (pkt_is_type3(hdr))
+			pktsize = type3_pkt_size(hdr);
 
-		else if (pkt_is_type4(src[i]))
-			pktsize = type4_pkt_size(src[i]);
+		else if (pkt_is_type4(hdr))
+			pktsize = type4_pkt_size(hdr);
 
-		else if (pkt_is_type7(src[i]))
-			pktsize = type7_pkt_size(src[i]);
+		else if (pkt_is_type7(hdr))
+			pktsize = type7_pkt_size(hdr);
 
 		/*
 		 * If the packet isn't a type 1, type 3, type 4 or type 7 then
@@ -923,12 +934,12 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 		else
 			break;
 
-		if (((pkt_is_type0(src[i]) || pkt_is_type3(src[i])) && !pktsize)
+		if (((pkt_is_type0(hdr) || pkt_is_type3(hdr)) && !pktsize)
 			|| ((pktsize + 1) > rem))
 			break;
 
-		if (pkt_is_type3(src[i])) {
-			if (adreno_cmd_is_ib(adreno_dev, src[i])) {
+		if (pkt_is_type3(hdr)) {
+			if (adreno_cmd_is_ib(adreno_dev, hdr)) {
 				uint64_t gpuaddrib2 = src[i + 1];
 				uint64_t size = src[i + 2];
 
@@ -940,7 +951,7 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 			} else {
 				ret = ib_parse_type3(device, &src[i], process,
 						ib_obj_list,
-						&ib_parse_vars);
+						&ib_parse_vars, ib_level);
 				/*
 				 * If the parse function failed (probably
 				 * because of a bad decode) then bail out and
@@ -952,8 +963,8 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 			}
 		}
 
-		else if (pkt_is_type7(src[i])) {
-			if (adreno_cmd_is_ib(adreno_dev, src[i])) {
+		else if (pkt_is_type7(hdr)) {
+			if (adreno_cmd_is_ib(adreno_dev, hdr)) {
 				u64 size = src[i + 3];
 				u64 gpuaddribn = ((u64)(src[i + 2]) << 32) | src[i + 1];
 				s64 next_ibbase = get_ib_base(adreno_dev, ib_level + IB_LEVEL_1);
@@ -965,9 +976,9 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 				if (ret)
 					goto done;
 			} else {
-				ret = ib_parse_type7(device, &src[i], process,
+				ret = ib_parse_type7(device, &src[i], pktsize, process,
 						ib_obj_list,
-						&ib_parse_vars);
+						&ib_parse_vars, ib_level);
 				/*
 				 * If the parse function failed (probably
 				 * because of a bad decode) then bail out and
@@ -979,7 +990,7 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 			}
 		}
 
-		else if (pkt_is_type0(src[i])) {
+		else if (pkt_is_type0(hdr)) {
 			ret = ib_parse_type0(device, &src[i], process,
 					ib_obj_list, &ib_parse_vars);
 			if (ret)
